@@ -91,44 +91,44 @@ export const authApi = {
 
 export const dashboardApi = {
   getKPIs: (company?: string) =>
-    call('trader_app.api.dashboard.get_kpis', { company }),
+    get('trader_app.api.dashboard.get_kpis', { company }),
 
   getSalesTrend: (company?: string, months?: number) =>
-    call('trader_app.api.dashboard.get_sales_trend', { company, months }),
+    get('trader_app.api.dashboard.get_sales_trend', { company, months }),
 
   getTopCustomers: (limit?: number, company?: string) =>
-    call('trader_app.api.dashboard.get_top_customers', { company, limit }),
+    get('trader_app.api.dashboard.get_top_customers', { company, limit }),
 
   getRecentOrders: (limit?: number, company?: string) =>
-    call('trader_app.api.dashboard.get_recent_orders', { company, limit }),
+    get('trader_app.api.dashboard.get_recent_orders', { company, limit }),
 
   getCashFlowSummary: (company?: string, months?: number) =>
-    call('trader_app.api.dashboard.get_cash_flow_summary', { company, months }),
+    get('trader_app.api.dashboard.get_cash_flow_summary', { company, months }),
 
   getInventorySummary: (company?: string) =>
-    call('trader_app.api.dashboard.get_inventory_summary', { company }),
+    get('trader_app.api.dashboard.get_inventory_summary', { company }),
 };
 
 // ─── Sales API ───────────────────────────────────────────────────
 
 export const salesApi = {
   getInvoices: (params?: Record<string, any>) =>
-    call('trader_app.api.sales.get_sales_invoices', params),
+    get('trader_app.api.sales.get_sales_invoices', params),
 
   getInvoiceDetail: (name: string) =>
-    call('trader_app.api.sales.get_sales_invoice_detail', { name }),
+    get('trader_app.api.sales.get_sales_invoice_detail', { name }),
 
   getOrders: (params?: Record<string, any>) =>
-    call('trader_app.api.sales.get_sales_orders', params),
+    get('trader_app.api.sales.get_sales_orders', params),
 
   getOrderDetail: (name: string) =>
-    call('trader_app.api.sales.get_sales_order_detail', { name }),
+    get('trader_app.api.sales.get_sales_order_detail', { name }),
 
   getQuotations: (params?: Record<string, any>) =>
-    call('trader_app.api.sales.get_quotations', params),
+    get('trader_app.api.sales.get_quotations', params),
 
   getQuotationDetail: (name: string) =>
-    call('trader_app.api.sales.get_quotation_detail', { name }),
+    get('trader_app.api.sales.get_quotation_detail', { name }),
 
   createInvoice: (data: Record<string, any>) =>
     call('trader_app.api.sales.create_sales_invoice', data),
@@ -158,38 +158,38 @@ export const salesApi = {
     call('trader_app.api.sales.create_sales_invoice', { ...data, is_return: 1 }),
 
   getSummary: (company?: string) =>
-    call('trader_app.api.sales.get_sales_summary', { company }),
+    get('trader_app.api.sales.get_sales_summary', { company }),
 };
 
 // ─── Purchases API ───────────────────────────────────────────────
 
 export const purchasesApi = {
   getInvoices: (params?: Record<string, any>) =>
-    call('trader_app.api.purchases.get_purchase_invoices', params),
+    get('trader_app.api.purchases.get_purchase_invoices', params),
 
   getInvoiceDetail: (name: string) =>
-    call('trader_app.api.purchases.get_purchase_invoice_detail', { name }),
+    get('trader_app.api.purchases.get_purchase_invoice_detail', { name }),
 
   getOrders: (params?: Record<string, any>) =>
-    call('trader_app.api.purchases.get_purchase_orders', params),
+    get('trader_app.api.purchases.get_purchase_orders', params),
 
   getOrderDetail: (name: string) =>
-    call('trader_app.api.purchases.get_purchase_order_detail', { name }),
+    get('trader_app.api.purchases.get_purchase_order_detail', { name }),
 
   getRequisitions: (params?: Record<string, any>) =>
-    call('trader_app.api.purchases.get_material_requests', params),
+    get('trader_app.api.purchases.get_material_requests', params),
 
   getRequisitionDetail: (name: string) =>
-    call('trader_app.api.purchases.get_material_request_detail', { name }),
+    get('trader_app.api.purchases.get_material_request_detail', { name }),
 
   submitRequisition: (name: string) =>
     call('trader_app.api.purchases.submit_material_request', { name }),
 
   getRfqs: (params?: Record<string, any>) =>
-    call('trader_app.api.purchases.get_supplier_quotations', params),
+    get('trader_app.api.purchases.get_supplier_quotations', params),
 
   getRfqDetail: (name: string) =>
-    call('trader_app.api.purchases.get_supplier_quotation_detail', { name }),
+    get('trader_app.api.purchases.get_supplier_quotation_detail', { name }),
 
   createInvoice: (data: Record<string, any>) =>
     call('trader_app.api.purchases.create_purchase_invoice', data),
@@ -231,38 +231,38 @@ export const purchasesApi = {
     call('trader_app.api.purchases.create_purchase_invoice', { ...data, is_return: 1 }),
 
   getSummary: (company?: string) =>
-    call('trader_app.api.purchases.get_purchase_summary', { company }),
+    get('trader_app.api.purchases.get_purchase_summary', { company }),
 };
 
 // ─── Inventory API ───────────────────────────────────────────────
 
 export const inventoryApi = {
   getStockBalance: (params?: Record<string, any>) =>
-    call('trader_app.api.inventory.get_stock_balance', params),
+    get('trader_app.api.inventory.get_stock_balance', params),
 
   getStockLedger: (params?: Record<string, any>) =>
-    call('trader_app.api.inventory.get_stock_ledger', params),
+    get('trader_app.api.inventory.get_stock_ledger', params),
 
   getItems: (params?: Record<string, any>) =>
-    call('trader_app.api.inventory.get_items', params),
+    get('trader_app.api.inventory.get_items', params),
 
   getItemDetail: (itemCode: string) =>
-    call('trader_app.api.inventory.get_item_detail', { item_code: itemCode }),
+    get('trader_app.api.inventory.get_item_detail', { item_code: itemCode }),
 
   getWarehouses: (company?: string) =>
-    call('trader_app.api.inventory.get_warehouses', { company }),
+    get('trader_app.api.inventory.get_warehouses', { company }),
 
   getSummary: (company?: string) =>
-    call('trader_app.api.inventory.get_inventory_summary', { company }),
+    get('trader_app.api.inventory.get_inventory_summary', { company }),
 
   getInventorySummary: (company?: string) =>
-    call('trader_app.api.inventory.get_inventory_summary', { company }),
+    get('trader_app.api.inventory.get_inventory_summary', { company }),
 
   getLowStockItems: (params?: Record<string, any>) =>
-    call('trader_app.api.inventory.get_low_stock_items', params),
+    get('trader_app.api.inventory.get_low_stock_items', params),
 
   getItemGroups: () =>
-    call('trader_app.api.inventory.get_item_groups'),
+    get('trader_app.api.inventory.get_item_groups'),
 
   createItem: (data: Record<string, any>) =>
     call('trader_app.api.inventory.create_item', data),
@@ -281,16 +281,16 @@ export const inventoryApi = {
 
 export const customersApi = {
   getList: (params?: Record<string, any>) =>
-    call('trader_app.api.customers.get_customers', params),
+    get('trader_app.api.customers.get_customers', params),
 
   getDetail: (name: string) =>
-    call('trader_app.api.customers.get_customer_detail', { name }),
+    get('trader_app.api.customers.get_customer_detail', { name }),
 
   getGroups: () =>
-    call('trader_app.api.customers.get_customer_groups'),
+    get('trader_app.api.customers.get_customer_groups'),
 
   getTransactions: (customer: string, params?: Record<string, any>) =>
-    call('trader_app.api.customers.get_customer_transactions', { customer, ...params }),
+    get('trader_app.api.customers.get_customer_transactions', { customer, ...params }),
   create: (data: Record<string, any>) =>
     call('trader_app.api.customers.create_customer', data),
 
@@ -307,16 +307,16 @@ export const customersApi = {
 
 export const suppliersApi = {
   getList: (params?: Record<string, any>) =>
-    call('trader_app.api.suppliers.get_suppliers', params),
+    get('trader_app.api.suppliers.get_suppliers', params),
 
   getDetail: (name: string) =>
-    call('trader_app.api.suppliers.get_supplier_detail', { name }),
+    get('trader_app.api.suppliers.get_supplier_detail', { name }),
 
   getGroups: () =>
-    call('trader_app.api.suppliers.get_supplier_groups'),
+    get('trader_app.api.suppliers.get_supplier_groups'),
 
   getTransactions: (supplier: string, params?: Record<string, any>) =>
-    call('trader_app.api.suppliers.get_supplier_transactions', { supplier, ...params }),
+    get('trader_app.api.suppliers.get_supplier_transactions', { supplier, ...params }),
   create: (data: Record<string, any>) =>
     call('trader_app.api.suppliers.create_supplier', data),
 
@@ -333,13 +333,13 @@ export const suppliersApi = {
 
 export const financeApi = {
   getPaymentEntries: (params?: Record<string, any>) =>
-    call('trader_app.api.finance.get_payment_entries', params),
+    get('trader_app.api.finance.get_payment_entries', params),
 
   getPaymentEntryDetail: (name: string) =>
-    call('trader_app.api.finance.get_payment_entry_detail', { name }),
+    get('trader_app.api.finance.get_payment_entry_detail', { name }),
 
   getPaymentEntrySetup: (company?: string) =>
-    call('trader_app.api.finance.get_payment_entry_setup', { company }),
+    get('trader_app.api.finance.get_payment_entry_setup', { company }),
 
   createPaymentEntry: (data: Record<string, any>) =>
     call('trader_app.api.finance.create_payment_entry', data),
@@ -351,13 +351,13 @@ export const financeApi = {
     call('trader_app.api.finance.cancel_payment_entry', { name }),
 
   getJournalEntries: (params?: Record<string, any>) =>
-    call('trader_app.api.finance.get_journal_entries', params),
+    get('trader_app.api.finance.get_journal_entries', params),
 
   getJournalEntryDetail: (name: string) =>
-    call('trader_app.api.finance.get_journal_entry_detail', { name }),
+    get('trader_app.api.finance.get_journal_entry_detail', { name }),
 
   getAccounts: (params?: Record<string, any>) =>
-    call('trader_app.api.finance.get_accounts', params),
+    get('trader_app.api.finance.get_accounts', params),
 
   createJournalEntry: (data: Record<string, any>) =>
     call('trader_app.api.finance.create_journal_entry', data),
@@ -369,103 +369,103 @@ export const financeApi = {
     call('trader_app.api.finance.cancel_journal_entry', { name }),
 
   getOutstandingSummary: (company?: string) =>
-    call('trader_app.api.finance.get_outstanding_summary', { company }),
+    get('trader_app.api.finance.get_outstanding_summary', { company }),
 };
 
 // ─── Reports API ─────────────────────────────────────────────────
 
 export const reportsApi = {
   getSalesReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_sales_report', params),
+    get('trader_app.api.reports.get_sales_report', params),
 
   getPurchaseReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_purchase_report', params),
+    get('trader_app.api.reports.get_purchase_report', params),
 
   getItemSalesReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_item_sales_report', params),
+    get('trader_app.api.reports.get_item_sales_report', params),
 
   getCustomerLedger: (customer: string, params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_customer_ledger', { customer, ...params }),
+    get('trader_app.api.reports.get_customer_ledger', { customer, ...params }),
 
   getSupplierLedger: (supplier: string, params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_supplier_ledger', { supplier, ...params }),
+    get('trader_app.api.reports.get_supplier_ledger', { supplier, ...params }),
 
   getReceivableAgingSummary: () =>
-    call('trader_app.api.reports.get_receivable_aging'),
+    get('trader_app.api.reports.get_receivable_aging'),
 
   getReceivableAgingDetail: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_receivable_aging_detail', params),
+    get('trader_app.api.reports.get_receivable_aging_detail', params),
 
   getAccountsPayable: () =>
-    call('trader_app.api.reports.get_accounts_payable'),
+    get('trader_app.api.reports.get_accounts_payable'),
 
   getProfitAndLoss: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_profit_and_loss', params),
+    get('trader_app.api.reports.get_profit_and_loss', params),
 
   getGeneralLedger: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_general_ledger', params),
+    get('trader_app.api.reports.get_general_ledger', params),
 
   // ─── Phase 1: New report endpoints ─────────────────────────────
   getSalesPerformanceReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_sales_performance_report', params),
+    get('trader_app.api.reports.get_sales_performance_report', params),
 
   getCustomerProfitabilityReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_customer_profitability_report', params),
+    get('trader_app.api.reports.get_customer_profitability_report', params),
 
   getStockAgingReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_stock_aging_report', params),
+    get('trader_app.api.reports.get_stock_aging_report', params),
 
   getInventoryMovementReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_inventory_movement_report', params),
+    get('trader_app.api.reports.get_inventory_movement_report', params),
 
   getReorderReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_reorder_report', params),
+    get('trader_app.api.reports.get_reorder_report', params),
 
   getSupplierScorecardReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_supplier_scorecard_report', params),
+    get('trader_app.api.reports.get_supplier_scorecard_report', params),
 
   getPurchasePriceVarianceReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_purchase_price_variance_report', params),
+    get('trader_app.api.reports.get_purchase_price_variance_report', params),
 
   getReceivableAgingInvoiceDetail: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_receivable_aging_invoice_detail', params),
+    get('trader_app.api.reports.get_receivable_aging_invoice_detail', params),
 
   getPayableAgingInvoiceDetail: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_payable_aging_invoice_detail', params),
+    get('trader_app.api.reports.get_payable_aging_invoice_detail', params),
 
   getTaxSummaryReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_tax_summary_report', params),
+    get('trader_app.api.reports.get_tax_summary_report', params),
 
   getOpenPurchaseOrdersReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_open_purchase_orders_report', params),
+    get('trader_app.api.reports.get_open_purchase_orders_report', params),
 
   getCollectionEfficiencyReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_collection_efficiency_report', params),
+    get('trader_app.api.reports.get_collection_efficiency_report', params),
 
   // ─── Phase 2: New report endpoints ─────────────────────────────
   getDailySalesReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_daily_sales_report', params),
+    get('trader_app.api.reports.get_daily_sales_report', params),
 
   getSalesReturnReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_sales_return_report', params),
+    get('trader_app.api.reports.get_sales_return_report', params),
 
   getPurchaseReturnReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_purchase_return_report', params),
+    get('trader_app.api.reports.get_purchase_return_report', params),
 
   getCashflowReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_cashflow_report', params),
+    get('trader_app.api.reports.get_cashflow_report', params),
 
   getProfitLossSummaryReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_profit_loss_summary_report', params),
+    get('trader_app.api.reports.get_profit_loss_summary_report', params),
 
   getStockBalanceReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_stock_balance_report', params),
+    get('trader_app.api.reports.get_stock_balance_report', params),
 
   getSalespersonPerformanceReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_salesperson_performance_report', params),
+    get('trader_app.api.reports.get_salesperson_performance_report', params),
 
   getItemPurchaseReport: (params?: Record<string, any>) =>
-    call('trader_app.api.reports.get_item_purchase_report', params),
+    get('trader_app.api.reports.get_item_purchase_report', params),
 };
 
 export default http;
@@ -474,7 +474,7 @@ export default http;
 
 export const settingsApi = {
   get: () =>
-    call('trader_app.api.settings.get_settings'),
+    get('trader_app.api.settings.get_settings'),
 
   save: (data: Record<string, any>) =>
     call('trader_app.api.settings.save_settings', { data }),
@@ -490,7 +490,7 @@ export const settingsApi = {
 
 export const gstApi = {
   getSettings: () =>
-    call('trader_app.api.gst.get_gst_settings'),
+    get('trader_app.api.gst.get_gst_settings'),
 
   saveSettings: (data: Record<string, any>) =>
     call('trader_app.api.gst.save_gst_settings', data),
@@ -499,17 +499,17 @@ export const gstApi = {
     call('trader_app.api.gst.seed_punjab_gst_templates', { company }),
 
   getTaxTemplates: (doctype_filter?: string) =>
-    call('trader_app.api.gst.get_tax_templates', { doctype_filter }),
+    get('trader_app.api.gst.get_tax_templates', { doctype: doctype_filter }),
 };
 
 // ─── Bundling API ────────────────────────────────────────────────
 
 export const bundlingApi = {
   getBundles: (params?: Record<string, any>) =>
-    call('trader_app.api.bundling.get_item_bundles', params),
+    get('trader_app.api.bundling.get_item_bundles', params),
 
   getBundleDetail: (name: string) =>
-    call('trader_app.api.bundling.get_item_bundle_detail', { name }),
+    get('trader_app.api.bundling.get_item_bundle_detail', { name }),
 
   createBundle: (data: Record<string, any>) =>
     call('trader_app.api.bundling.create_item_bundle', data),
@@ -528,5 +528,5 @@ export const bundlingApi = {
 
 export const printApi = {
   getPrintData: (doctype: string, name: string, viewMode?: string, format?: string) =>
-    call('trader_app.api.printing.get_print_data', { doctype, name, view_mode: viewMode, format }),
+    get('trader_app.api.printing.get_print_data', { doctype, name, view_mode: viewMode, format }),
 };
