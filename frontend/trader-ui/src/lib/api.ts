@@ -52,12 +52,23 @@ function getCsrfToken(): string {
 
 // ─── Generic Frappe call helper ──────────────────────────────────
 
+/** Strip keys whose value is undefined — Frappe serialises them as the
+ *  literal string "undefined" which causes 400 BAD REQUEST errors. */
+function clean(obj?: Record<string, any>): Record<string, any> | undefined {
+  if (!obj) return undefined;
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function call<T = any>(method: string, params?: Record<string, any>): Promise<AxiosResponse<{ message: T }>> {
-  return http.post('/api/method/' + method, params);
+  return http.post('/api/method/' + method, clean(params));
 }
 
 function get<T = any>(method: string, params?: Record<string, any>): Promise<AxiosResponse<{ message: T }>> {
-  return http.get('/api/method/' + method, { params });
+  return http.get('/api/method/' + method, { params: clean(params) });
 }
 
 // ─── Auth API ────────────────────────────────────────────────────
