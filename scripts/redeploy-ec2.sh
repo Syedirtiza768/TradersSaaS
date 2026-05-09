@@ -36,6 +36,7 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin@2026}"
 BUILD_ATTEMPTS="${BUILD_ATTEMPTS:-3}"
 BUILD_RETRY_DELAY="${BUILD_RETRY_DELAY:-20}"
 BACKEND_TIMEOUT="${BACKEND_TIMEOUT:-420}"
+BUILD_PROGRESS="${BUILD_PROGRESS:-plain}"
 
 log()  { echo -e "\n\033[1;34m▶  $*\033[0m"; }
 ok()   { echo -e "\033[1;32m✅ $*\033[0m"; }
@@ -92,13 +93,17 @@ log "STEP 4 — Build application images"
 # =============================================================================
 # Build sequentially: parallel frontend + backend builds can overload small EC2
 # instances and hit BuildKit grpc disconnects while sending a huge context.
+log "STEP 4A — Build frontend image"
 retry "$BUILD_ATTEMPTS" "$BUILD_RETRY_DELAY" \
-    docker compose -f "$COMPOSE_FILE" build "${BUILD_FLAGS[@]}" frontend \
+    docker compose -f "$COMPOSE_FILE" build --progress "$BUILD_PROGRESS" "${BUILD_FLAGS[@]}" frontend \
     || fail "frontend image build failed"
+ok "Frontend image built"
+
+log "STEP 4B — Build backend image"
 retry "$BUILD_ATTEMPTS" "$BUILD_RETRY_DELAY" \
-    docker compose -f "$COMPOSE_FILE" build "${BUILD_FLAGS[@]}" backend \
+    docker compose -f "$COMPOSE_FILE" build --progress "$BUILD_PROGRESS" "${BUILD_FLAGS[@]}" backend \
     || fail "backend image build failed (shared by workers/scheduler/websocket)"
-ok "Images built"
+ok "Backend image built"
 
 # =============================================================================
 log "STEP 5 — Start core services"
