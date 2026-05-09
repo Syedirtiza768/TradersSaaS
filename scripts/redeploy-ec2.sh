@@ -65,7 +65,12 @@ ok "Old images removed"
 # =============================================================================
 log "STEP 4 — Build ALL images from scratch (no cache)"
 # =============================================================================
-docker compose -f "$COMPOSE_FILE" build --no-cache --pull
+# Build sequentially: parallel frontend + backend builds can overload small EC2
+# instances and hit BuildKit grpc disconnects while sending a huge context.
+docker compose -f "$COMPOSE_FILE" build --no-cache --pull frontend \
+    || fail "frontend image build failed"
+docker compose -f "$COMPOSE_FILE" build --no-cache --pull backend \
+    || fail "backend image build failed (shared by workers/scheduler/websocket)"
 ok "Images built"
 
 # =============================================================================

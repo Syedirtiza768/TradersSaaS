@@ -1,0 +1,45 @@
+# Shrink Compose build context (context is repo root: compose uses `context: ..`).
+# Without this, `.git` and other junk are sent to the daemon — slow on EC2 and can
+# trigger BuildKit grpc timeouts during "load build definition".
+
+.git
+**/.git
+.github
+
+# Dependencies & outputs (match .gitignore; also cover untracked installs)
+node_modules/
+frontend/trader-ui/node_modules/
+frontend/trader-ui/dist/
+frontend/trader-ui/.vite/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Not referenced by infra/docker/*.Dockerfile
+docs/
+backups/
+logs/
+*.log
+
+# Secrets / local env (never copy into image layers)
+.env
+.env.*
+compose/.env
+compose/auth_cookies.txt
+
+# Tooling / IDE
+.vscode/
+.idea/
+.cursor/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Large local artifacts
+*.sql
+*.sql.gz
+*.tar.gz
