@@ -7,6 +7,15 @@
 
 import axios, { type AxiosInstance, type AxiosResponse } from 'axios';
 
+function getCsrfToken(): string {
+  return (
+    document.cookie
+      .split('; ')
+      .find((c) => c.startsWith('csrf_token='))
+      ?.split('=')[1] || ''
+  );
+}
+
 // ─── Axios Instance ──────────────────────────────────────────────
 
 const http: AxiosInstance = axios.create({
@@ -15,8 +24,12 @@ const http: AxiosInstance = axios.create({
   headers: {
     Accept: 'application/json',
     'Content-Type': 'application/json',
-    'X-Frappe-CSRF-Token': getCsrfToken(),
   },
+});
+
+http.interceptors.request.use((config) => {
+  config.headers.set('X-Frappe-CSRF-Token', getCsrfToken());
+  return config;
 });
 
 // On every response, grab the latest CSRF token if returned
@@ -33,22 +46,13 @@ http.interceptors.response.use(
       const token = getCsrfToken();
       if (token) {
         err.config._retried = true;
-        err.config.headers['X-Frappe-CSRF-Token'] = token;
+        err.config.headers.set('X-Frappe-CSRF-Token', token);
         return http.request(err.config);
       }
     }
     return Promise.reject(err);
   },
 );
-
-function getCsrfToken(): string {
-  return (
-    document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('csrf_token='))
-      ?.split('=')[1] || ''
-  );
-}
 
 // ─── Generic Frappe call helper ──────────────────────────────────
 
