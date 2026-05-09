@@ -37,6 +37,10 @@ BUILD_ATTEMPTS="${BUILD_ATTEMPTS:-3}"
 BUILD_RETRY_DELAY="${BUILD_RETRY_DELAY:-20}"
 BACKEND_TIMEOUT="${BACKEND_TIMEOUT:-420}"
 BUILD_PROGRESS="${BUILD_PROGRESS:-plain}"
+# Step 16: API can return 504 until Gunicorn/Frappe finishes warming up after workers start.
+HEALTH_RETRIES="${HEALTH_RETRIES:-12}"
+HEALTH_RETRY_DELAY="${HEALTH_RETRY_DELAY:-10}"
+CURL_MAX_TIME="${CURL_MAX_TIME:-30}"
 
 log()  { echo -e "\n\033[1;34m▶  $*\033[0m"; }
 ok()   { echo -e "\033[1;32m✅ $*\033[0m"; }
@@ -246,15 +250,25 @@ ok "Application services started"
 log "STEP 16 — Final health check"
 # =============================================================================
 sleep 5
-FRONTEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+FRONTEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$CURL_MAX_TIME" \
     -H "Host: $SITE_NAME" "http://localhost:${HTTP_PORT:-8080}/" \
     2>/dev/null || true)
 FRONTEND_STATUS="${FRONTEND_STATUS:-000}"
 
-API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-    -H "Host: $SITE_NAME" "http://localhost:${HTTP_PORT:-8080}/api/method/ping" \
-    2>/dev/null || true)
-API_STATUS="${API_STATUS:-000}"
+API_STATUS="000"
+for ((i = 1; i <= HEALTH_RETRIES; i++)); do
+    API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$CURL_MAX_TIME" \
+        -H "Host: $SITE_NAME" "http://localhost:${HTTP_PORT:-8080}/api/method/ping" \
+        2>/dev/null || true)
+    API_STATUS="${API_STATUS:-000}"
+    if [[ "$API_STATUS" == "200" ]]; then
+        break
+    fi
+    if [[ "$i" -lt "$HEALTH_RETRIES" ]]; then
+        echo "  API ping attempt $i/$HEALTH_RETRIES: HTTP $API_STATUS — retrying in ${HEALTH_RETRY_DELAY}s…"
+        sleep "$HEALTH_RETRY_DELAY"
+    fi
+done
 
 if [[ "$FRONTEND_STATUS" == "200" && "$API_STATUS" == "200" ]]; then
     ok "Health check passed — site is live"
