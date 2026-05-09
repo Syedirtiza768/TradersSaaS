@@ -176,6 +176,12 @@ services:
     # the EC2 host (e.g. a previous Node / nginx instance).
     expose:
       - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   # ===========================================
   # NGINX REVERSE PROXY
@@ -191,7 +197,7 @@ services:
       backend:
         condition: service_healthy
       frontend:
-        condition: service_started
+        condition: service_healthy
 
 # ===========================================
 # VOLUMES

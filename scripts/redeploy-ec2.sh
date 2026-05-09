@@ -142,17 +142,29 @@ sleep 5
 # =============================================================================
 log "STEP 7 — Verify site exists"
 # =============================================================================
-SITE_EXISTS=$(bench_exec "bench --site '$SITE_NAME' list-apps 2>&1" || echo "no")
-if echo "$SITE_EXISTS" | grep -q "No such site\|does not exist\|no"; then
+SITE_DIR_EXISTS=$(bench_exec "[ -d 'sites/$SITE_NAME' ] && echo yes || echo no")
+SITE_APPS=$(bench_exec "bench --site '$SITE_NAME' list-apps 2>&1" || true)
+
+if [[ "$SITE_DIR_EXISTS" == "yes" ]]; then
+    ok "Site '$SITE_NAME' exists"
+elif echo "$SITE_APPS" | grep -qi "No such site\|does not exist"; then
     warn "Site '$SITE_NAME' not found — creating it now"
-    bench_exec "bench new-site '$SITE_NAME' \
+    CREATE_SITE_OUTPUT=$(bench_exec "bench new-site '$SITE_NAME' \
         --db-root-password \"\${DB_ROOT_PASSWORD}\" \
         --admin-password '$ADMIN_PASSWORD' \
         --install-app erpnext \
-        --no-mariadb-socket"
-    ok "Site '$SITE_NAME' created"
+        --mariadb-user-host-login-scope='%' 2>&1" || true)
+    if echo "$CREATE_SITE_OUTPUT" | grep -qi "already exists"; then
+        warn "Site '$SITE_NAME' already exists — continuing"
+    elif echo "$CREATE_SITE_OUTPUT" | grep -qi "Traceback\|Error"; then
+        echo "$CREATE_SITE_OUTPUT"
+        fail "Site '$SITE_NAME' could not be created"
+    else
+        ok "Site '$SITE_NAME' created"
+    fi
 else
-    ok "Site '$SITE_NAME' exists"
+    warn "Could not verify site with list-apps; continuing because backend is running"
+    echo "$SITE_APPS"
 fi
 
 # =============================================================================
@@ -234,15 +246,22 @@ ok "Application services started"
 log "STEP 16 — Final health check"
 # =============================================================================
 sleep 5
-HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+FRONTEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    -H "Host: $SITE_NAME" "http://localhost:${HTTP_PORT:-8080}/" \
+    2>/dev/null || true)
+FRONTEND_STATUS="${FRONTEND_STATUS:-000}"
+
+API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
     -H "Host: $SITE_NAME" "http://localhost:${HTTP_PORT:-8080}/api/method/ping" \
     2>/dev/null || true)
-HTTP_STATUS="${HTTP_STATUS:-000}"
+API_STATUS="${API_STATUS:-000}"
 
-if [[ "$HTTP_STATUS" == "200" ]]; then
+if [[ "$FRONTEND_STATUS" == "200" && "$API_STATUS" == "200" ]]; then
     ok "Health check passed — site is live"
 else
-    warn "Health check returned HTTP $HTTP_STATUS"
+    warn "Health check returned frontend HTTP $FRONTEND_STATUS, API HTTP $API_STATUS"
+    docker compose -f "$COMPOSE_FILE" ps
+    docker compose -f "$COMPOSE_FILE" logs --tail=80 proxy frontend backend
 fi
 
 # =============================================================================
