@@ -2,10 +2,10 @@
 # =============================================================================
 # Traders — EC2 Full Redeploy Script
 # =============================================================================
-# Performs a complete no-cache rebuild and redeployment:
+# Performs a full EC2 redeployment:
 #   1. Pull latest code from git
-#   2. Rebuild ALL Docker images from scratch (--no-cache)
-#   3. Restart all services
+#   2. Rebuild application Docker images
+#   3. Start core services
 #   4. Wait for backend health
 #   5. Run bench migrate
 #   6. Install trader_app on the site (if not already installed)
@@ -21,22 +21,42 @@
 set -euo pipefail
 
 COMPOSE_FILE="compose/docker-compose.yml"
-SITE_NAME="${SITE_NAME:-enxi.realtrackapp.com}"
 ENV_FILE="compose/.env"
 
-# ── Load .env so SITE_NAME / ADMIN_PASSWORD are available ──────────────────
+# ── Load .env so SITE_NAME / ADMIN_PASSWORD are available ───────────────────
 if [[ -f "$ENV_FILE" ]]; then
-    # shellcheck disable=SC2046
-    export $(grep -v '^#' "$ENV_FILE" | grep -v '^\s*$' | xargs)
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
 fi
 
 SITE_NAME="${SITE_NAME:-enxi.realtrackapp.com}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin@2026}"
+BUILD_ATTEMPTS="${BUILD_ATTEMPTS:-3}"
+BUILD_RETRY_DELAY="${BUILD_RETRY_DELAY:-20}"
+BACKEND_TIMEOUT="${BACKEND_TIMEOUT:-420}"
 
 log()  { echo -e "\n\033[1;34m▶  $*\033[0m"; }
 ok()   { echo -e "\033[1;32m✅ $*\033[0m"; }
 warn() { echo -e "\033[1;33m⚠️  $*\033[0m"; }
 fail() { echo -e "\033[1;31m❌ $*\033[0m"; exit 1; }
+
+retry() {
+    local attempts="$1"
+    local delay="$2"
+    shift 2
+
+    local attempt=1
+    until "$@"; do
+        if [[ "$attempt" -ge "$attempts" ]]; then
+            return 1
+        fi
+        warn "Command failed; retrying in ${delay}s (${attempt}/${attempts})"
+        sleep "$delay"
+        attempt=$((attempt + 1))
+    done
+}
 
 bench_exec() {
     docker compose -f "$COMPOSE_FILE" exec -T backend \
@@ -46,8 +66,7 @@ bench_exec() {
 # =============================================================================
 log "STEP 1 — Git pull"
 # =============================================================================
-git checkout -- compose/docker-compose.yml 2>/dev/null || true
-git pull origin main || fail "git pull failed — check for local conflicts"
+git pull --ff-only origin main || fail "git pull failed — check for local conflicts"
 ok "Code up to date"
 
 # =============================================================================
@@ -57,38 +76,54 @@ docker compose -f "$COMPOSE_FILE" down --remove-orphans || true
 ok "Containers stopped"
 
 # =============================================================================
-log "STEP 3 — Remove stale images (no-cache rebuild)"
+log "STEP 3 — Prepare Docker build"
 # =============================================================================
-docker rmi traders-backend:latest traders-frontend:latest 2>/dev/null || true
-ok "Old images removed"
+BUILD_FLAGS=()
+if [[ "${NO_CACHE:-0}" == "1" || "${NO_CACHE:-false}" == "true" ]]; then
+    BUILD_FLAGS+=(--no-cache)
+fi
+if [[ "${PULL_BASE_IMAGES:-0}" == "1" || "${PULL_BASE_IMAGES:-false}" == "true" ]]; then
+    BUILD_FLAGS+=(--pull)
+fi
+ok "Build flags: ${BUILD_FLAGS[*]:-(default cache, no forced pull)}"
 
 # =============================================================================
-log "STEP 4 — Build ALL images from scratch (no cache)"
+log "STEP 4 — Build application images"
 # =============================================================================
 # Build sequentially: parallel frontend + backend builds can overload small EC2
 # instances and hit BuildKit grpc disconnects while sending a huge context.
-docker compose -f "$COMPOSE_FILE" build --no-cache --pull frontend \
+retry "$BUILD_ATTEMPTS" "$BUILD_RETRY_DELAY" \
+    docker compose -f "$COMPOSE_FILE" build "${BUILD_FLAGS[@]}" frontend \
     || fail "frontend image build failed"
-docker compose -f "$COMPOSE_FILE" build --no-cache --pull backend \
+retry "$BUILD_ATTEMPTS" "$BUILD_RETRY_DELAY" \
+    docker compose -f "$COMPOSE_FILE" build "${BUILD_FLAGS[@]}" backend \
     || fail "backend image build failed (shared by workers/scheduler/websocket)"
 ok "Images built"
 
 # =============================================================================
-log "STEP 5 — Start all services"
+log "STEP 5 — Start core services"
 # =============================================================================
-docker compose -f "$COMPOSE_FILE" up -d
-ok "Services started"
+docker compose -f "$COMPOSE_FILE" up -d db redis-cache redis-queue frontend backend \
+    || {
+        docker compose -f "$COMPOSE_FILE" logs --tail=80 backend
+        fail "Core services failed to start"
+    }
+ok "Core services started"
 
 # =============================================================================
-log "STEP 6 — Wait for backend to become healthy (up to 120s)"
+log "STEP 6 — Wait for backend to accept traffic (up to ${BACKEND_TIMEOUT}s)"
 # =============================================================================
-TIMEOUT=120
 ELAPSED=0
-until docker compose -f "$COMPOSE_FILE" ps backend \
-        | grep -qE "(healthy|running)"; do
-    if [[ $ELAPSED -ge $TIMEOUT ]]; then
-        docker compose -f "$COMPOSE_FILE" logs --tail=50 backend
-        fail "Backend did not become healthy within ${TIMEOUT}s"
+until [[ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$(docker compose -f "$COMPOSE_FILE" ps -q backend)" 2>/dev/null || echo missing)" == "healthy" ]]; do
+    STATUS="$(docker inspect -f '{{.State.Status}}' "$(docker compose -f "$COMPOSE_FILE" ps -q backend)" 2>/dev/null || echo missing)"
+    if [[ "$STATUS" == "exited" || "$STATUS" == "dead" ]]; then
+        docker compose -f "$COMPOSE_FILE" logs --tail=120 backend
+        fail "Backend container exited before becoming healthy"
+    fi
+    if [[ $ELAPSED -ge $BACKEND_TIMEOUT ]]; then
+        docker compose -f "$COMPOSE_FILE" ps
+        docker compose -f "$COMPOSE_FILE" logs --tail=120 backend
+        fail "Backend did not become healthy within ${BACKEND_TIMEOUT}s"
     fi
     echo "  waiting… ${ELAPSED}s"
     sleep 8
@@ -180,11 +215,24 @@ bench_exec "bench --site '$SITE_NAME' set-admin-password '$ADMIN_PASSWORD' 2>/de
 ok "Passwords set"
 
 # =============================================================================
-log "STEP 15 — Final health check"
+log "STEP 15 — Start workers, scheduler, websocket, and proxy"
+# =============================================================================
+docker compose -f "$COMPOSE_FILE" up -d worker-short worker-long worker-default scheduler websocket proxy \
+    || {
+        docker compose -f "$COMPOSE_FILE" ps
+        docker compose -f "$COMPOSE_FILE" logs --tail=80 proxy backend
+        fail "Application services failed to start"
+    }
+ok "Application services started"
+
+# =============================================================================
+log "STEP 16 — Final health check"
 # =============================================================================
 sleep 5
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-    -H "Host: $SITE_NAME" http://localhost:8080/api/method/ping)
+    -H "Host: $SITE_NAME" "http://localhost:${HTTP_PORT:-8080}/api/method/ping" \
+    2>/dev/null || true)
+HTTP_STATUS="${HTTP_STATUS:-000}"
 
 if [[ "$HTTP_STATUS" == "200" ]]; then
     ok "Health check passed — site is live"

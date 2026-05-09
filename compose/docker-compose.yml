@@ -94,12 +94,18 @@ services:
         bench set-config -g redis_queue redis://$${REDIS_QUEUE} &&
         /home/frappe/frappe-bench/env/bin/gunicorn --bind 0.0.0.0:8000 --workers $${GUNICORN_WORKERS:-4} --threads $${GUNICORN_THREADS:-4} --worker-class gthread --timeout 120 --graceful-timeout 30 --log-level info frappe.app:application
       "
+    # Keep this independent of SITE_NAME. The deployment script may need to
+    # create/repair the site after Gunicorn is already accepting connections.
     healthcheck:
-      test: ["CMD-SHELL", "status=$$(curl -o /dev/null -s -w '%{http_code}' http://localhost:8000); [ \"$$status\" = \"200\" ] || [ \"$$status\" = \"404\" ]"]
-      interval: 15s
+      test:
+        [
+          "CMD-SHELL",
+          "/home/frappe/frappe-bench/env/bin/python -c \"import socket; s = socket.create_connection(('127.0.0.1', 8000), 5); s.close()\"",
+        ]
+      interval: 10s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 20
+      start_period: 180s
 
   # ===========================================
   # WEBSOCKET
