@@ -54,6 +54,12 @@ http.interceptors.response.use(
   },
 );
 
+/** SPA is served without Frappe Desk — ping once so Guest session + CSRF cookie exist before login. */
+async function frappeGuestBootstrap(): Promise<void> {
+  if (getCsrfToken()) return;
+  await http.get('/api/method/ping');
+}
+
 // ─── Generic Frappe call helper ──────────────────────────────────
 
 /** Strip keys whose value is undefined — Frappe serialises them as the
@@ -78,8 +84,10 @@ function get<T = any>(method: string, params?: Record<string, any>): Promise<Axi
 // ─── Auth API ────────────────────────────────────────────────────
 
 export const authApi = {
-  login: (usr: string, pwd: string) =>
-    http.post('/api/method/login', { usr, pwd }),
+  login: async (usr: string, pwd: string) => {
+    await frappeGuestBootstrap();
+    return http.post('/api/method/login', { usr, pwd });
+  },
 
   logout: () =>
     http.get('/api/method/logout'),
@@ -257,9 +265,6 @@ export const inventoryApi = {
     get('trader_app.api.inventory.get_warehouses', { company }),
 
   getSummary: (company?: string) =>
-    get('trader_app.api.inventory.get_inventory_summary', { company }),
-
-  getInventorySummary: (company?: string) =>
     get('trader_app.api.inventory.get_inventory_summary', { company }),
 
   getLowStockItems: (params?: Record<string, any>) =>

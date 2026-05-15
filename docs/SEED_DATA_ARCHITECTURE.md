@@ -2,112 +2,82 @@
 
 ## Overview
 
-The seed data engine generates a complete demo business dataset simulating 6–12 months of activity for a wholesale trading/distribution company.
+The demo seed generates a wholesale trading / distribution dataset (roughly multi‑month horizon) driven by **`DemoInstaller`** in `trader_app/demo/installer/main.py`. Implementations live under `trader_app/demo/generators/` and configuration in `trader_app/demo/seed_engine/config.py`.
 
-## Execution Order (Dependency Chain)
+## Execution Order (actual dependency chain)
 
 ```
-1. CompanyGenerator      → Company, Fiscal Year, Chart of Accounts, Cost Centers
-2. WarehouseGenerator    → Warehouses (Main, Secondary, Retail)
-3. TaxGenerator          → Tax templates, tax categories
-4. UserGenerator         → Admin, Sales Mgr, Purchase Mgr, Accountant, Warehouse Mgr
-5. CustomerGenerator     → 80–120 customers with contacts and addresses
-6. SupplierGenerator     → 40–60 suppliers with contacts and addresses
-7. ItemGenerator         → 300–500 items across 4 groups
-8. InventoryGenerator    → Opening stock entries for all items
-9. PurchaseGenerator     → 150–300 POs, 150–300 Purchase Invoices
-10. SalesGenerator       → 300–600 SOs, 300–600 Sales Invoices
-11. PaymentGenerator     → Customer payments, supplier payments, partial payments
-12. FinancialGenerator   → Journal entries, expense entries, bank transactions
-13. Validator            → Integrity checks, balance verification
+1.  CompanyGenerator         → Company, fiscal year, CoA-linked setup, warehouses,
+                               payment terms, cost centers, baseline sales tax templates,
+                               warehouse types / address template
+2.  UserGenerator            → Trader role users + role profiles
+3.  CustomerGenerator       → Customers / credit / territories
+4.  SupplierGenerator        → Suppliers
+5.  ItemGenerator            → Item groups, items, price lists (buy/sell)
+6.  InventoryGenerator      → Opening stock (Material Receipt) across warehouses
+7.  BundlesTransfersGenerator → Demo `Item Bundle` presets + Material Transfer Stock Entries
+                               (Main ⇄ Secondary ⇄ Retail)
+8.  QuotationGenerator       → Customer quotations (mixed draft / submitted); some are later
+                               converted in SalesGenerator (Quotation → SO → SI)
+9.  RequisitionsGenerator    → Sample `Material Request` + `Supplier Quotation`
+10. PurchaseGenerator       → Purchase Invoices — mix of **standalone PI** and **PI-from-PO**
+                               (linked `purchase_order` / `po_detail` lines for KPI realism)
+11. SalesGenerator          → Sales Invoices — **direct SI** vs **SO → SI**
+                               (`sales_order` / `so_detail`; optional quotation→SO linkage)
+12. PaymentGenerator       → Payments on AR/AP behaviour from config fractions
+13. FinancialGenerator      → JE / operating expenses
+14. EnrichmentGenerator     → Reporting polish (sales persons, PO pipeline samples, taxes on
+                               a subset of invoices, returns, item reorder, stock issues, etc.)
+
 ```
 
-## Generator Interface
+## Configuration (`DEMO_CONFIG`)
 
-Each generator follows a standard interface:
+Key volume / mix keys (ranges are `(low, high)` tuples unless noted):
 
-```python
-class BaseGenerator:
-    def __init__(self, demo_config):
-        self.config = demo_config
-        self.created_records = []
+| Key | Purpose |
+|-----|---------|
+| `num_sales_invoices` | Target count of **submitted Sales Invoices** (direct + SO-linked combined). |
+| `pct_sales_invoices_via_sales_order` | Fraction of those invoices spawned from a **submitted Sales Order** (remainder: direct invoices). |
+| `pct_so_linked_from_quotation` | Of SO-backed flows, likelihood to originate from an eligible **submitted quotation** pending conversion. |
+| `num_purchase_invoices` | Target count of **submitted Purchase Invoices**. |
+| `pct_purchase_invoices_from_po` | Fraction seeded **from a submitted PO** (lines carry `purchase_order` / `po_detail`). Remaining PIs are standalone. |
+| `num_quotations` | Quotations seeded (draft/submit mix via `fraction_quotation_submit`). |
+| `num_material_requests` | Internal requisitions (`Material Request`, mostly Purchase purpose). |
+| `num_supplier_quotations` | RFQ-style docs (`Supplier Quotation`), some referencing MRs. |
+| `num_inter_warehouse_transfers` | Extra **Material Transfer** movements between the three seeded warehouses. |
 
-    def generate(self):
-        """Main generation method"""
-        raise NotImplementedError
+Removed / unused legacy keys: **`num_sales_orders`** and **`num_purchase_orders`** (PO volume is implicit: PO-linked PIs plus enrichment extras).
 
-    def validate(self):
-        """Validate generated data"""
-        raise NotImplementedError
+### Generator Interface
 
-    def get_progress(self):
-        """Return progress percentage"""
-        return len(self.created_records)
-```
+Each generator subclasses `BaseGenerator` (`trader_app/demo/seed_engine/base.py`): `generate()`, `validate()`, `run()`, `run_validation()`, `depends_on` (documentation only).
 
-## Demo Configuration
+## Item Groups & Pricing
 
-```python
-DEMO_CONFIG = {
-    "company_name": "Global Trading Company Ltd",
-    "company_abbr": "GTC",
-    "country": "Pakistan",
-    "currency": "PKR",
-    "city": "Lahore",
-    "fiscal_year_start": "2025-07-01",
-    "fiscal_year_end": "2026-06-30",
-    "demo_start_date": "2025-07-01",
-    "demo_end_date": "2026-03-16",
-    "num_customers": (80, 120),
-    "num_suppliers": (40, 60),
-    "num_items": (300, 500),
-    "num_sales_orders": (300, 600),
-    "num_purchase_orders": (150, 300),
-    "payment_completion_rate": 0.7,  # 70% of invoices fully paid
-    "partial_payment_rate": 0.15,    # 15% partially paid
-    # remaining 15% unpaid — creates receivables/payables
-}
-```
-
-## Item Groups and Profiles
-
-| Group | Items | Price Range (PKR) | Margin |
-|-------|-------|--------------------|--------|
-| FMCG | 100–150 | 50–5,000 | 15–25% |
-| Hardware Tools | 80–120 | 200–15,000 | 20–35% |
-| Electrical Supplies | 60–100 | 100–10,000 | 18–30% |
-| Consumables | 60–130 | 20–3,000 | 12–20% |
-
-## Customer Profiles
-
-| Segment | Count | Avg Monthly Orders | Credit Limit (PKR) |
-|---------|-------|--------------------|---------------------|
-| Premium Retailers | 15–25 | 8–15 | 500,000–2,000,000 |
-| Regular Retailers | 40–60 | 3–8 | 100,000–500,000 |
-| Small Shops | 25–35 | 1–3 | 50,000–150,000 |
-
-## Supplier Profiles
-
-| Type | Count | Lead Time | Payment Terms |
-|------|-------|-----------|---------------|
-| Manufacturers | 10–15 | 7–14 days | Net 30 |
-| Distributors | 15–25 | 3–7 days | Net 15 |
-| Importers | 10–15 | 14–30 days | Advance + Net 30 |
-| Local Suppliers | 5–10 | 1–3 days | COD / Net 7 |
-
-## Revenue Distribution
-
-- Monthly revenue target: PKR 5,000,000 – 15,000,000
-- Seasonal variation: ±20% around mean
-- Growth trend: +5% month-over-month (slight upward trend for demo appeal)
+See inline `item_groups`, `customer_segments`, and `supplier_types` in `DEMO_CONFIG` — unchanged conceptually from prior docs (margins / credit bands / supplier personas).
 
 ## Data Realism Constraints
 
-1. No future-dated transactions
-2. Delivery date >= order date
-3. Payment date >= invoice date
-4. Stock never goes negative (at transaction time)
-5. Purchase price < selling price (positive margins)
-6. Credit limit not exceeded (mostly)
-7. Tax calculations match ERPNext formulas
-8. All double-entry accounting balances
+Handled across generators where applicable:
+
+1. Transaction dates clipped to ≤ site “today”.
+2. Credit checks on outbound sales chains (approximate rolling outstanding).
+3. Purchase PO dates precede PI posting where seeded from PO.
+4. Warehouse inventory for transfers prefers bins with surplus stock.
+5. Post-seed enrichment still back-fills salesperson / tax subsets / reorder rows for reports — see docstring on `EnrichmentGenerator`.
+
+## Manual / UI-only seeds
+
+**Punjab GST templates** (`trader_app.api.gst.seed_punjab_gst_templates`) remain a **desk/UI action** — not part of `install_demo`. Demo company PKR flows still rely on baseline templates from **CompanyGenerator** unless operators run GST seed.
+
+## Operational Notes
+
+Run:
+
+```bash
+bench --site <site> execute trader_app.demo.install_demo
+bench --site <site> execute trader_app.demo.uninstall_demo
+```
+
+`uninstall_demo` removes company‑scoped transactional doctypes listed in `DemoInstaller.uninstall()`, deletes **Demo Pack\*** bundles, then clears global Item/Customer/Supplier masters (destructive wipe pattern).

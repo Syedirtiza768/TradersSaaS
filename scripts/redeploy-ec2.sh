@@ -33,6 +33,10 @@ fi
 
 SITE_NAME="${SITE_NAME:-enxi.realtrackapp.com}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin@2026}"
+
+if [[ "$SITE_NAME" == "trader.localhost" ]]; then
+    warn "SITE_NAME is trader.localhost — set SITE_NAME=enxi.realtrackapp.com in compose/.env for production"
+fi
 BUILD_ATTEMPTS="${BUILD_ATTEMPTS:-3}"
 BUILD_RETRY_DELAY="${BUILD_RETRY_DELAY:-20}"
 BACKEND_TIMEOUT="${BACKEND_TIMEOUT:-420}"
@@ -66,6 +70,14 @@ retry() {
 bench_exec() {
     docker compose -f "$COMPOSE_FILE" exec -T backend \
         bash -c "cd /home/frappe/frappe-bench && $*"
+}
+
+ensure_trader_app_in_bench() {
+  # Frappe v15: apps.txt lives under sites/, not bench root (persisted in sites-vol).
+  # Always rewrite with printf — appending with >> breaks if the last line has no newline
+  # (e.g. "erpnext" + "trader_app" becomes "erpnexttrader_app").
+    bench_exec 'printf "%s\n" frappe erpnext trader_app > sites/apps.txt'
+    bench_exec "/home/frappe/frappe-bench/env/bin/pip install -q -e apps/trader_app 2>/dev/null || true"
 }
 
 # =============================================================================
@@ -153,10 +165,12 @@ if [[ "$SITE_DIR_EXISTS" == "yes" ]]; then
     ok "Site '$SITE_NAME' exists"
 elif echo "$SITE_APPS" | grep -qi "No such site\|does not exist"; then
     warn "Site '$SITE_NAME' not found — creating it now"
+    ensure_trader_app_in_bench
     CREATE_SITE_OUTPUT=$(bench_exec "bench new-site '$SITE_NAME' \
         --db-root-password \"\${DB_ROOT_PASSWORD}\" \
         --admin-password '$ADMIN_PASSWORD' \
         --install-app erpnext \
+        --install-app trader_app \
         --mariadb-user-host-login-scope='%' 2>&1" || true)
     if echo "$CREATE_SITE_OUTPUT" | grep -qi "already exists"; then
         warn "Site '$SITE_NAME' already exists — continuing"
@@ -176,6 +190,12 @@ log "STEP 8 — Install/upgrade ERPNext on site"
 # =============================================================================
 bench_exec "bench --site '$SITE_NAME' install-app erpnext 2>&1 || true"
 ok "ERPNext checked"
+
+# =============================================================================
+log "STEP 8b — Register trader_app on bench (apps.txt)"
+# =============================================================================
+ensure_trader_app_in_bench
+ok "trader_app registered in apps.txt"
 
 # =============================================================================
 log "STEP 9 — Install trader_app on site"

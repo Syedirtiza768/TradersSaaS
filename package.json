@@ -5,6 +5,8 @@
   "description": "Traders Business Management System — Monorepo",
   "type": "module",
   "scripts": {
+    "progress:sync": "node scripts/update-implementation-progress.mjs",
+    "progress:check": "node scripts/update-implementation-progress.mjs && git diff --exit-code docs/IMPLEMENTATION_PROGRESS.md docs/.implementation-progress.snapshot.json",
     "audit:architecture": "node scripts/architecture-audit/run-audit.mjs --full",
     "audit:frontend": "node scripts/architecture-audit/run-audit.mjs --frontend",
     "audit:backend": "node scripts/architecture-audit/run-audit.mjs --backend",

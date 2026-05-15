@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   DollarSign,
   TrendingUp,
@@ -8,6 +9,8 @@ import {
   AlertTriangle,
   Users,
   ShoppingCart,
+  Plus,
+  RefreshCw,
 } from 'lucide-react';
 import {
   BarChart,
@@ -45,13 +48,15 @@ export default function DashboardPage() {
   const [topCustomers, setTopCustomers] = useState<any[]>([]);
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadDashboard();
+    void loadDashboard();
   }, []);
 
   const loadDashboard = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [kpiRes, trendRes, customersRes, ordersRes] = await Promise.all([
         dashboardApi.getKPIs(),
@@ -66,6 +71,11 @@ export default function DashboardPage() {
       setRecentOrders(ordersRes.data.message || []);
     } catch (err) {
       console.error('Failed to load dashboard:', err);
+      setLoadError('Could not load dashboard data. Check your connection and try again.');
+      setKpis(null);
+      setSalesTrend([]);
+      setTopCustomers([]);
+      setRecentOrders([]);
     } finally {
       setLoading(false);
     }
@@ -76,9 +86,44 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Page Header */}
-      <div>
-        <h1 className="page-title">Dashboard</h1>
-        <p className="text-gray-500 mt-1 text-sm">Welcome back — here's your business at a glance.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="text-gray-500 dark:text-slate-400 mt-1 text-sm">Welcome back — here's your business at a glance.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          <button type="button" onClick={() => void loadDashboard()} className="btn-secondary flex items-center gap-2 text-sm" disabled={loading}>
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
+      </div>
+
+      {loadError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" role="alert">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => void loadDashboard()} className="btn-primary text-sm shrink-0">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Quick actions */}
+      <div className="flex flex-wrap gap-2">
+        <Link to="/sales/new" className="btn-primary inline-flex items-center gap-2 text-sm">
+          <Plus size={14} /> New sales invoice
+        </Link>
+        <Link to="/sales/orders/new" className="btn-secondary inline-flex items-center gap-2 text-sm">
+          <Plus size={14} /> New sales order
+        </Link>
+        <Link to="/purchases/new" className="btn-secondary inline-flex items-center gap-2 text-sm">
+          <Plus size={14} /> New purchase invoice
+        </Link>
+        <Link to="/inventory/items/new" className="btn-secondary inline-flex items-center gap-2 text-sm">
+          <Plus size={14} /> New item
+        </Link>
+        <Link to="/reports" className="btn-secondary inline-flex items-center gap-2 text-sm">
+          Reports
+        </Link>
       </div>
 
       {/* KPI Cards */}

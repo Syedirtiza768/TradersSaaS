@@ -185,6 +185,63 @@
   .mobile-card-value {
     @apply font-medium text-gray-900;
   }
+
+  /* Trader UI dark mode (html.dark — toggled from trader_app.api.settings per-user prefs) */
+  .dark body {
+    @apply text-gray-100 bg-slate-950;
+  }
+
+  .dark * {
+    @apply border-slate-700;
+  }
+
+  .dark .card {
+    @apply bg-slate-900 border-slate-700 shadow-none;
+  }
+
+  .dark .card-header {
+    @apply border-slate-700;
+  }
+
+  .dark .btn-secondary {
+    @apply bg-slate-800 text-gray-100 border-slate-600 hover:bg-slate-700;
+  }
+
+  .dark .page-title {
+    @apply text-gray-100;
+  }
+
+  .dark .sidebar-link {
+    @apply text-gray-300 hover:bg-slate-800 hover:text-brand-300;
+  }
+
+  .dark .sidebar-link.active {
+    @apply bg-slate-800 text-brand-300;
+  }
+
+  .dark .input-field {
+    @apply bg-slate-900 border-slate-600 text-gray-100 placeholder-slate-500;
+  }
+
+  .dark .table-container {
+    @apply border-slate-700;
+  }
+
+  .dark .mobile-card-label {
+    @apply text-slate-400;
+  }
+
+  .dark .mobile-card-value {
+    @apply text-gray-100;
+  }
+
+  .dark .mobile-nav-link {
+    @apply text-slate-400;
+  }
+
+  .dark .mobile-nav-link.active {
+    @apply text-brand-300;
+  }
 }
 
 @layer utilities {

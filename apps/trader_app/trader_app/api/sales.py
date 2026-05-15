@@ -574,8 +574,9 @@ def _check_customer_credit_limit(doc):
                 indicator="orange",
                 alert=True,
             )
-    except Exception:
-        pass  # credit limit helpers may not exist in all ERPNext versions
+    except (AttributeError, ImportError):
+        # Optional ERPNext helpers / version differences — do not swallow broader errors.
+        pass
 
 
 def _default_company():

@@ -29,7 +29,7 @@ export default function MobileNav({ onMorePress }: MobileNavProps) {
     );
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 lg:hidden pb-safe" aria-label="Mobile navigation">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-700 lg:hidden pb-safe" aria-label="Mobile navigation">
       <div className="flex items-center justify-around h-[var(--mobile-nav-height)]">
         {tabs.map((tab) => {
           if (tab.id === 'more') {

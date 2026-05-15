@@ -19,8 +19,13 @@ from trader_app.demo.generators.customers import CustomerGenerator
 from trader_app.demo.generators.suppliers import SupplierGenerator
 from trader_app.demo.generators.items import ItemGenerator
 from trader_app.demo.generators.inventory import InventoryGenerator
-from trader_app.demo.generators.sales import SalesGenerator
+from trader_app.demo.generators.bundles_transfers import (
+    BundlesTransfersGenerator,
+)
+from trader_app.demo.generators.quotations import QuotationGenerator
+from trader_app.demo.generators.requisitions import RequisitionsGenerator
 from trader_app.demo.generators.purchases import PurchaseGenerator
+from trader_app.demo.generators.sales import SalesGenerator
 from trader_app.demo.generators.payments import PaymentGenerator
 from trader_app.demo.generators.financial import FinancialGenerator
 from trader_app.demo.generators.enrichment import EnrichmentGenerator
@@ -36,6 +41,9 @@ class DemoInstaller:
         SupplierGenerator,
         ItemGenerator,
         InventoryGenerator,
+        BundlesTransfersGenerator,
+        QuotationGenerator,
+        RequisitionsGenerator,
         PurchaseGenerator,
         SalesGenerator,
         PaymentGenerator,
@@ -143,8 +151,11 @@ class DemoInstaller:
             "Journal Entry",
             "Sales Invoice",
             "Sales Order",
+            "Quotation",
             "Purchase Invoice",
             "Purchase Order",
+            "Supplier Quotation",
+            "Material Request",
             "Stock Entry",
             "Stock Ledger Entry",
             "GL Entry",
@@ -182,6 +193,18 @@ class DemoInstaller:
                     print(f"  🗑️  Deleted {count} {dt} records")
             except Exception as e:
                 print(f"  ⚠️  Error cleaning {dt}: {str(e)}")
+
+        # Demo Item Bundles (no company field — match name prefix)
+        try:
+            for bundle in frappe.get_all(
+                "Item Bundle",
+                filters=[["bundle_name", "like", "Demo Pack%"]],
+                pluck="name",
+            ):
+                frappe.delete_doc("Item Bundle", bundle, force=True)
+                print(f"  🗑️  Deleted Item Bundle: {bundle}")
+        except Exception as e:
+            print(f"  ⚠️  Error cleaning Item Bundle: {str(e)}")
 
         # Clean master data
         for dt in ["Item Price", "Item"]:

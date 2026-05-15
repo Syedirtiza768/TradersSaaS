@@ -12,6 +12,31 @@ env:
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
+  # Implementation progress — manifest must match committed tracker
+  # ────────────────────────────────────────────────────────────────────────────
+  implementation-progress:
+    name: Implementation progress check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Regenerate progress tracker
+        run: npm run progress:sync
+
+      - name: Fail if tracker not committed
+        run: |
+          git diff --exit-code docs/IMPLEMENTATION_PROGRESS.md docs/.implementation-progress.snapshot.json || (
+            echo "::error::Implementation progress is out of date. Run 'npm run progress:sync' at the repo root and commit docs/IMPLEMENTATION_PROGRESS.md and docs/.implementation-progress.snapshot.json"
+            exit 1
+          )
+
+  # ────────────────────────────────────────────────────────────────────────────
   # Frontend — Lint, Type-check, Build
   # ────────────────────────────────────────────────────────────────────────────
   frontend:

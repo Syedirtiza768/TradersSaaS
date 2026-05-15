@@ -56,7 +56,7 @@ const CreatePaymentEntryPage = lazy(() => import('./pages/CreatePaymentEntryPage
 const OperationsPage = lazy(() => import('./pages/OperationsPage'));
 const DocumentPrintPage = lazy(() => import('./pages/DocumentPrintPage'));
 const GstSettingsPage = lazy(() => import('./pages/GstSettingsPage'));
-const ReportsPage = lazy(() => import('./pages/ReportsPageNew'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 function PageLoader() {

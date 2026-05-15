@@ -41,7 +41,7 @@ def _read_user_ui_settings():
     ]
     stored = {}
     for k in keys:
-        val = frappe.db.get_default("trader_ui_{}".format(k), for_user=frappe.session.user)
+        val = frappe.defaults.get_user_default("trader_ui_{}".format(k))
         if val is not None:
             stored[k] = val
 
@@ -109,7 +109,7 @@ def save_settings(data=None):
 
     # 1. Persist to per-user DB defaults (survives cache clears, no special perms needed)
     for k, v in cleaned.items():
-        frappe.db.set_default("trader_ui_{}".format(k), v, for_user=frappe.session.user)
+        frappe.defaults.set_user_default("trader_ui_{}".format(k), v)
 
     frappe.db.commit()
 

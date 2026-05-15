@@ -352,7 +352,7 @@ class EnrichmentGenerator(BaseGenerator):
             print("  ⚠️  No suppliers/items for PO creation")
             return
 
-        num_pos = random.randint(30, 60)
+        num_pos = random.randint(10, 22)
         count = 0
         for _ in range(num_pos):
             days_offset = random.randint(-60, 0)

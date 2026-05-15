@@ -1,3 +1,4 @@
 # Trader App requirements
 frappe
 erpnext
+defusedxml>=0.7.1

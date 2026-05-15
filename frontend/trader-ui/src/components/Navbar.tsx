@@ -11,7 +11,7 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
   const [showMenu, setShowMenu] = useState(false);
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-[var(--navbar-height)] bg-white border-b border-gray-200 z-50 flex items-center justify-between px-4 sm:px-6" role="banner">
+    <header className="fixed top-0 left-0 right-0 h-[var(--navbar-height)] bg-white border-b border-gray-200 z-50 flex items-center justify-between px-4 sm:px-6 dark:bg-slate-900 dark:border-slate-700" role="banner">
       {/* Left: Hamburger + Logo */}
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Hamburger — visible below lg */}
@@ -28,8 +28,8 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
             <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-base sm:text-lg font-bold text-gray-900 leading-none">Traders</h1>
-            <p className="text-[10px] text-gray-400 hidden xs:block">Business Management</p>
+            <h1 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100 leading-none">Traders</h1>
+            <p className="text-[10px] text-gray-400 dark:text-slate-500 hidden xs:block">Business Management</p>
           </div>
         </div>
       </div>

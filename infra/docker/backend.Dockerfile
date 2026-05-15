@@ -40,7 +40,9 @@ COPY --chown=frappe:frappe apps/trader_app/requirements.txt /home/frappe/frappe-
 # the costly bench/ERPNext layers and only rebuild the final install layer.
 COPY --chown=frappe:frappe apps/trader_app /home/frappe/frappe-bench/apps/trader_app
 
-RUN /home/frappe/frappe-bench/env/bin/pip install --no-cache-dir -e /home/frappe/frappe-bench/apps/trader_app
+# bench get-app updates sites/apps.txt; trader_app is copied in manually, so register it.
+RUN /home/frappe/frappe-bench/env/bin/pip install --no-cache-dir -e /home/frappe/frappe-bench/apps/trader_app \
+    && printf '%s\n' frappe erpnext trader_app > sites/apps.txt
 
 EXPOSE 8000 9000
 

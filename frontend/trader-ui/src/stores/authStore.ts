@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { authApi } from '../lib/api';
+import { authApi, settingsApi } from '../lib/api';
+import { applyTraderUiTheme, clearTraderUiTheme, normaliseUiPrefs } from '../lib/traderUiTheme';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -14,6 +15,16 @@ interface AuthState {
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   clearError: () => void;
+}
+
+async function hydrateUiFromServer(): Promise<void> {
+  try {
+    const res = await settingsApi.get();
+    const ui = res.data?.message?.ui;
+    if (ui) applyTraderUiTheme(normaliseUiPrefs(ui as Record<string, unknown>));
+  } catch {
+    /* settings optional at bootstrap */
+  }
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -43,6 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         initialized: true,
         loading: false,
       });
+      void hydrateUiFromServer();
     } catch (err: any) {
       const message =
         err.response?.data?.message || err.response?.data?.exc || 'Login failed. Please check your credentials.';
@@ -57,6 +69,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch {
       // ignore
     }
+    clearTraderUiTheme();
     set({ isAuthenticated: false, user: null, fullName: null, roles: [], initialized: true });
   },
 
@@ -76,10 +89,13 @@ export const useAuthStore = create<AuthState>((set) => ({
           roles,
           initialized: true,
         });
+        void hydrateUiFromServer();
       } else {
+        clearTraderUiTheme();
         set({ isAuthenticated: false, user: null, roles: [], initialized: true });
       }
     } catch {
+      clearTraderUiTheme();
       set({ isAuthenticated: false, user: null, roles: [], initialized: true });
     }
   },

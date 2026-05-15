@@ -8,10 +8,146 @@ can call them via `frappe.call` / REST.
 
 from __future__ import unicode_literals
 
+import json
+
 import frappe
 from frappe import _
 from frappe.utils import nowdate, getdate, add_months, flt, cint, now_datetime, add_days
-from frappe.utils.caching import redis_cache
+
+# Redis-backed cache TTL for headline KPIs (scheduler refresh_dashboard_cache repopulates).
+DASHBOARD_KPI_CACHE_TTL = 300
+
+
+def _dashboard_kpi_cache_key(company):
+    return "trader_app:dashboard_kpis:v1:{0}".format(company or "_")
+
+
+def _compute_dashboard_kpis(company):
+    """Run heavy SQL for one company — no read-through cache (used by get_kpis + scheduler)."""
+    company = company or _default_company()
+    currency = frappe.get_cached_value("Company", company, "default_currency") or "PKR"
+    today = nowdate()
+    first_of_month = getdate(today).replace(day=1).isoformat()
+
+    todays_sales = flt(frappe.db.sql("""
+        SELECT COALESCE(SUM(grand_total), 0)
+        FROM `tabSales Invoice`
+        WHERE company = %s AND docstatus = 1 AND posting_date = %s
+    """, (company, today))[0][0])
+
+    monthly_revenue = flt(frappe.db.sql("""
+        SELECT COALESCE(SUM(grand_total), 0)
+        FROM `tabSales Invoice`
+        WHERE company = %s AND docstatus = 1
+              AND posting_date >= %s AND posting_date <= %s
+    """, (company, first_of_month, today))[0][0])
+
+    outstanding_receivables = flt(frappe.db.sql("""
+        SELECT COALESCE(SUM(outstanding_amount), 0)
+        FROM `tabSales Invoice`
+        WHERE company = %s AND docstatus = 1 AND outstanding_amount > 0
+    """, (company,))[0][0])
+
+    outstanding_payables = flt(frappe.db.sql("""
+        SELECT COALESCE(SUM(outstanding_amount), 0)
+        FROM `tabPurchase Invoice`
+        WHERE company = %s AND docstatus = 1 AND outstanding_amount > 0
+    """, (company,))[0][0])
+
+    stock_value = flt(frappe.db.sql("""
+        SELECT COALESCE(SUM(stock_value), 0)
+        FROM `tabBin` b
+        INNER JOIN `tabWarehouse` w ON w.name = b.warehouse
+        WHERE w.company = %s
+    """, (company,))[0][0])
+
+    # Below item reorder level when set, else default threshold of 10 units (per-bin view).
+    # ERPNext v15+: reorder targets live on `tabItem Reorder` per warehouse, not `tabItem.reorder_level`.
+    low_stock_items = cint(frappe.db.sql("""
+        SELECT COUNT(DISTINCT b.item_code)
+        FROM `tabBin` b
+        INNER JOIN `tabWarehouse` w ON w.name = b.warehouse
+        INNER JOIN `tabItem` i ON i.name = b.item_code
+        LEFT JOIN `tabItem Reorder` ir ON ir.parent = i.name AND ir.warehouse = b.warehouse
+        WHERE w.company = %s
+          AND IFNULL(i.disabled, 0) = 0
+          AND b.actual_qty > 0
+          AND b.actual_qty < COALESCE(NULLIF(ir.warehouse_reorder_level, 0), 10)
+    """, (company,))[0][0])
+
+    total_customers = cint(frappe.db.count("Customer", {"disabled": 0}))
+
+    total_orders_today = cint(frappe.db.sql("""
+        SELECT COUNT(*)
+        FROM `tabSales Invoice`
+        WHERE company = %s AND docstatus = 1 AND posting_date = %s
+    """, (company, today))[0][0])
+
+    quotations_awaiting_conversion = cint(frappe.db.sql("""
+        SELECT COUNT(*)
+        FROM `tabQuotation` q
+        WHERE q.company = %s AND q.docstatus IN (0, 1)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM `tabSales Order Item` soi
+              INNER JOIN `tabSales Order` so ON so.name = soi.parent
+              WHERE soi.prevdoc_docname = q.name AND so.docstatus < 2
+          )
+    """, (company,))[0][0])
+
+    sales_orders_with_unpaid_invoices = cint(frappe.db.sql("""
+        SELECT COUNT(DISTINCT so.name)
+        FROM `tabSales Order` so
+        INNER JOIN `tabSales Invoice Item` sii ON sii.sales_order = so.name
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE so.company = %s
+          AND so.docstatus IN (0, 1)
+          AND si.docstatus = 1
+          AND si.outstanding_amount > 0
+    """, (company,))[0][0])
+
+    purchase_orders_with_unpaid_invoices = cint(frappe.db.sql("""
+        SELECT COUNT(DISTINCT po.name)
+        FROM `tabPurchase Order` po
+        INNER JOIN `tabPurchase Invoice Item` pii ON pii.purchase_order = po.name
+        INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+        WHERE po.company = %s
+          AND po.docstatus IN (0, 1)
+          AND pi.docstatus = 1
+          AND pi.outstanding_amount > 0
+    """, (company,))[0][0])
+
+    return {
+        "todays_sales": todays_sales,
+        "monthly_revenue": monthly_revenue,
+        "outstanding_receivables": outstanding_receivables,
+        "outstanding_payables": outstanding_payables,
+        "stock_value": stock_value,
+        "low_stock_items": low_stock_items,
+        "total_customers": total_customers,
+        "total_orders_today": total_orders_today,
+        "quotations_awaiting_conversion": quotations_awaiting_conversion,
+        "sales_orders_with_unpaid_invoices": sales_orders_with_unpaid_invoices,
+        "purchase_orders_with_unpaid_invoices": purchase_orders_with_unpaid_invoices,
+        "currency": currency,
+    }
+
+
+def _empty_kpi_payload():
+    return {
+        "todays_sales": 0,
+        "monthly_revenue": 0,
+        "outstanding_receivables": 0,
+        "outstanding_payables": 0,
+        "stock_value": 0,
+        "low_stock_items": 0,
+        "total_customers": 0,
+        "total_orders_today": 0,
+        "quotations_awaiting_conversion": 0,
+        "sales_orders_with_unpaid_invoices": 0,
+        "purchase_orders_with_unpaid_invoices": 0,
+        "currency": "PKR",
+    }
 
 
 # ────────────────────────────────────────────────────────────────
@@ -21,6 +157,9 @@ from frappe.utils.caching import redis_cache
 @frappe.whitelist()
 def get_kpis(company=None):
     """Return headline KPIs for the dashboard.
+
+    Results are cached in Redis for ``DASHBOARD_KPI_CACHE_TTL`` seconds per company.
+    The scheduled job ``refresh_dashboard_cache`` recomputes and refreshes the cache.
 
     Returns
     -------
@@ -33,137 +172,22 @@ def get_kpis(company=None):
     """
     try:
         company = company or _default_company()
-        currency = frappe.get_cached_value("Company", company, "default_currency") or "PKR"
-        today = nowdate()
-        first_of_month = getdate(today).replace(day=1).isoformat()
+        cache_key = _dashboard_kpi_cache_key(company)
+        cached = frappe.cache().get_value(cache_key)
+        if cached:
+            if isinstance(cached, bytes):
+                cached = cached.decode("utf-8")
+            try:
+                return json.loads(cached)
+            except (ValueError, TypeError):
+                pass
 
-        # Today's sales
-        todays_sales = flt(frappe.db.sql("""
-            SELECT COALESCE(SUM(grand_total), 0)
-            FROM `tabSales Invoice`
-            WHERE company = %s AND docstatus = 1 AND posting_date = %s
-        """, (company, today))[0][0])
-
-        # Monthly revenue
-        monthly_revenue = flt(frappe.db.sql("""
-            SELECT COALESCE(SUM(grand_total), 0)
-            FROM `tabSales Invoice`
-            WHERE company = %s AND docstatus = 1
-                  AND posting_date >= %s AND posting_date <= %s
-        """, (company, first_of_month, today))[0][0])
-
-        # Outstanding receivables
-        outstanding_receivables = flt(frappe.db.sql("""
-            SELECT COALESCE(SUM(outstanding_amount), 0)
-            FROM `tabSales Invoice`
-            WHERE company = %s AND docstatus = 1 AND outstanding_amount > 0
-        """, (company,))[0][0])
-
-        # Outstanding payables
-        outstanding_payables = flt(frappe.db.sql("""
-            SELECT COALESCE(SUM(outstanding_amount), 0)
-            FROM `tabPurchase Invoice`
-            WHERE company = %s AND docstatus = 1 AND outstanding_amount > 0
-        """, (company,))[0][0])
-
-        # Stock value
-        stock_value = flt(frappe.db.sql("""
-            SELECT COALESCE(SUM(stock_value), 0)
-            FROM `tabBin` b
-            INNER JOIN `tabWarehouse` w ON w.name = b.warehouse
-            WHERE w.company = %s
-        """, (company,))[0][0])
-
-        # Low stock items (below reorder level or < 10 qty)
-        low_stock_items = cint(frappe.db.sql("""
-            SELECT COUNT(DISTINCT b.item_code)
-            FROM `tabBin` b
-            INNER JOIN `tabWarehouse` w ON w.name = b.warehouse
-            WHERE w.company = %s AND b.actual_qty > 0 AND b.actual_qty < 10
-        """, (company,))[0][0])
-
-        # Total active customers
-        total_customers = cint(frappe.db.count("Customer", {"disabled": 0}))
-
-        # Today's order count
-        total_orders_today = cint(frappe.db.sql("""
-            SELECT COUNT(*)
-            FROM `tabSales Invoice`
-            WHERE company = %s AND docstatus = 1 AND posting_date = %s
-        """, (company, today))[0][0])
-
-        # Count submitted/open Quotations not yet converted to a Sales Order.
-        # ERPNext v15 links Quotations to Sales Orders via tabSales Order Item.prevdoc_docname,
-        # not via a direct column on tabSales Order — so we use that child table instead.
-        quotations_awaiting_conversion = cint(frappe.db.sql("""
-            SELECT COUNT(*)
-            FROM `tabQuotation` q
-            WHERE q.company = %s AND q.docstatus IN (0, 1)
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM `tabSales Order Item` soi
-                  INNER JOIN `tabSales Order` so ON so.name = soi.parent
-                  WHERE soi.prevdoc_docname = q.name AND so.docstatus < 2
-              )
-        """, (company,))[0][0])
-
-        # Sales Orders that have at least one outstanding (unpaid) Sales Invoice.
-        # In ERPNext v15 the SO→SI link lives on tabSales Invoice Item.sales_order,
-        # NOT as a direct column on tabSales Invoice.
-        sales_orders_with_unpaid_invoices = cint(frappe.db.sql("""
-            SELECT COUNT(DISTINCT so.name)
-            FROM `tabSales Order` so
-            INNER JOIN `tabSales Invoice Item` sii ON sii.sales_order = so.name
-            INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-            WHERE so.company = %s
-              AND so.docstatus IN (0, 1)
-              AND si.docstatus = 1
-              AND si.outstanding_amount > 0
-        """, (company,))[0][0])
-
-        # Purchase Orders that have at least one outstanding (unpaid) Purchase Invoice.
-        # Same pattern — link is on tabPurchase Invoice Item.purchase_order.
-        purchase_orders_with_unpaid_invoices = cint(frappe.db.sql("""
-            SELECT COUNT(DISTINCT po.name)
-            FROM `tabPurchase Order` po
-            INNER JOIN `tabPurchase Invoice Item` pii ON pii.purchase_order = po.name
-            INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
-            WHERE po.company = %s
-              AND po.docstatus IN (0, 1)
-              AND pi.docstatus = 1
-              AND pi.outstanding_amount > 0
-        """, (company,))[0][0])
-
-        return {
-            "todays_sales": todays_sales,
-            "monthly_revenue": monthly_revenue,
-            "outstanding_receivables": outstanding_receivables,
-            "outstanding_payables": outstanding_payables,
-            "stock_value": stock_value,
-            "low_stock_items": low_stock_items,
-            "total_customers": total_customers,
-            "total_orders_today": total_orders_today,
-            "quotations_awaiting_conversion": quotations_awaiting_conversion,
-            "sales_orders_with_unpaid_invoices": sales_orders_with_unpaid_invoices,
-            "purchase_orders_with_unpaid_invoices": purchase_orders_with_unpaid_invoices,
-            "currency": currency,
-        }
+        payload = _compute_dashboard_kpis(company)
+        frappe.cache().set_value(cache_key, json.dumps(payload), expires_in_sec=DASHBOARD_KPI_CACHE_TTL)
+        return payload
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Dashboard get_kpis failed")
-        return {
-            "todays_sales": 0,
-            "monthly_revenue": 0,
-            "outstanding_receivables": 0,
-            "outstanding_payables": 0,
-            "stock_value": 0,
-            "low_stock_items": 0,
-            "total_customers": 0,
-            "total_orders_today": 0,
-            "quotations_awaiting_conversion": 0,
-            "sales_orders_with_unpaid_invoices": 0,
-            "purchase_orders_with_unpaid_invoices": 0,
-            "currency": "PKR",
-        }
+        return _empty_kpi_payload()
 
 
 # ────────────────────────────────────────────────────────────────
@@ -328,12 +352,17 @@ def get_inventory_summary(company=None):
 # ────────────────────────────────────────────────────────────────
 
 def refresh_dashboard_cache():
-    """Called by scheduler every 15 min to warm the dashboard cache."""
+    """Called by scheduler to warm the dashboard KPI cache (writes Redis, same TTL as get_kpis)."""
     for company in frappe.get_all("Company", pluck="name"):
         try:
-            get_kpis(company=company)
+            payload = _compute_dashboard_kpis(company)
+            cache_key = _dashboard_kpi_cache_key(company)
+            frappe.cache().set_value(cache_key, json.dumps(payload), expires_in_sec=DASHBOARD_KPI_CACHE_TTL)
         except Exception:
-            pass
+            frappe.log_error(
+                frappe.get_traceback(),
+                "Dashboard refresh_dashboard_cache failed for {0}".format(company),
+            )
 
 
 # ────────────────────────────────────────────────────────────────

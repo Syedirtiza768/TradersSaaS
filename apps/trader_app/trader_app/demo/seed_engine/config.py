@@ -22,14 +22,38 @@ DEMO_CONFIG = {
     "demo_start_date": "2025-07-01",
     "demo_end_date": "2026-03-16",
 
-    # Data Volume
+    # Data Volume — Masters
     "num_customers": (80, 120),
     "num_suppliers": (40, 60),
     "num_items": (300, 500),
-    "num_sales_orders": (300, 600),
-    "num_sales_invoices": (300, 600),
-    "num_purchase_orders": (150, 300),
-    "num_purchase_invoices": (150, 300),
+
+    # Sales: target count of *submitted Sales Invoices*.
+    # Split = direct SI vs linked via SO→SI (see fractions below).
+    "num_sales_invoices": (300, 520),
+
+    # Purchase: target count of *submitted Purchase Invoices*.
+    # Mix = standalone PI vs PI raised from a submitted PO (`purchase_order`/`po_detail`).
+    "num_purchase_invoices": (150, 280),
+
+    # Quotations (Sales): draft + submitted; some are later converted SO→SI by SalesGenerator.
+    "num_quotations": (42, 78),
+    # Fraction of quotations that are submitted (rest stay draft for testing).
+    "fraction_quotation_submit": 0.64,
+
+    # Procurement documents (optional UI coverage)
+    "num_material_requests": (14, 28),
+    "num_supplier_quotations": (20, 38),
+
+    # Share of sales invoices that originate from a Sales Order (remainder: direct SI).
+    "pct_sales_invoices_via_sales_order": 0.34,
+    # Of SO-backed invoices, probability to chain from a pending *submitted* quotation.
+    "pct_so_linked_from_quotation": 0.36,
+
+    # Share of purchase invoices created from a Purchase Order (remainder: standalone PI).
+    "pct_purchase_invoices_from_po": 0.52,
+
+    # Inter-warehouse Material Transfer entries (Main / Secondary / Retail).
+    "num_inter_warehouse_transfers": (6, 14),
 
     # Payment Behavior
     "payment_completion_rate": 0.70,   # 70% of invoices fully paid
@@ -101,7 +125,7 @@ DEMO_CONFIG = {
         {"type": "Local Supplier", "count_range": (5, 10), "payment_terms": "Net 7"},
     ],
 
-    # Tax Configuration
+    # Tax Configuration (Sales templates seeded in CompanyGenerator)
     "taxes": [
         {"name": "Sales Tax 17%", "rate": 17.0, "type": "On Net Total"},
         {"name": "Sales Tax 5%", "rate": 5.0, "type": "On Net Total"},

@@ -38,7 +38,7 @@ export default function DashboardLayout() {
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
   return (
-    <div className="min-h-[var(--vh-full,100vh)] bg-gray-50">
+    <div className="min-h-[var(--vh-full,100vh)] bg-gray-50 dark:bg-slate-950">
       {/* Skip-to-content for keyboard users */}
       <a href="#main-content" className="skip-to-content">
         Skip to main content
@@ -62,7 +62,7 @@ export default function DashboardLayout() {
       )}
 
       {/* Main content area */}
-      <main id="main-content" className="lg:ml-[260px] mt-[var(--navbar-height)] pb-[calc(var(--mobile-nav-height)+var(--safe-bottom,0px))] lg:pb-0 page-container">
+      <main id="main-content" className="lg:ml-[260px] mt-[var(--navbar-height)] pb-[calc(var(--mobile-nav-height)+var(--safe-bottom,0px))] lg:pb-0 page-container dark:bg-slate-950">
         <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="spinner" role="status"><span className="sr-only">Loading…</span></div></div>}>
           <Outlet />
         </Suspense>

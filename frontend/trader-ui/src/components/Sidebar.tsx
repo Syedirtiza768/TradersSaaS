@@ -141,7 +141,7 @@ export default function Sidebar({ mobile = false, onClose }: SidebarProps) {
             <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
           </button>
           {open && (
-            <div className="ml-8 mt-0.5 space-y-0.5 border-l-2 border-gray-100 pl-3">
+            <div className="ml-8 mt-0.5 space-y-0.5 border-l-2 border-gray-100 dark:border-slate-700 pl-3">
               {item.children.map((child) => (
                 <NavLink
                   key={child.to}
@@ -149,8 +149,8 @@ export default function Sidebar({ mobile = false, onClose }: SidebarProps) {
                   end={child.to === item.to}
                   className={`block px-3 py-1.5 text-sm rounded-md transition-colors ${
                     isChildActive(child, item)
-                      ? 'text-brand-700 bg-brand-50 font-medium'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      ? 'text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-slate-800 font-medium'
+                      : 'text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-slate-800'
                   }`}
                   onClick={mobile ? onClose : undefined}
                 >
@@ -181,14 +181,14 @@ export default function Sidebar({ mobile = false, onClose }: SidebarProps) {
     <aside
       className={`${
         mobile
-          ? 'h-full w-full bg-white flex flex-col'
-          : 'fixed left-0 top-16 bottom-0 w-[260px] bg-white border-r border-gray-200 z-40 flex flex-col'
+          ? 'h-full w-full bg-white dark:bg-slate-900 flex flex-col'
+          : 'fixed left-0 top-16 bottom-0 w-[260px] bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-700 z-40 flex flex-col'
       }`}
     >
       {/* Mobile header with close button */}
       {mobile && (
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <span className="text-lg font-bold text-gray-900">Menu</span>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+          <span className="text-lg font-bold text-gray-900 dark:text-gray-100">Menu</span>
           <button
             onClick={onClose}
             className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
@@ -206,7 +206,7 @@ export default function Sidebar({ mobile = false, onClose }: SidebarProps) {
         </p>
         {navItems.map(renderItem)}
 
-        <div className="my-4 border-t border-gray-100" />
+        <div className="my-4 border-t border-gray-100 dark:border-slate-700" />
 
         <p className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
           System
@@ -215,12 +215,12 @@ export default function Sidebar({ mobile = false, onClose }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-gray-100 pb-safe">
-        <div className="flex items-center gap-2 text-xs text-gray-400">
+      <div className="px-4 py-3 border-t border-gray-100 dark:border-slate-700 pb-safe">
+        <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
           <div className="w-2 h-2 bg-green-500 rounded-full" />
           <span>System Online</span>
         </div>
-        <p className="text-[10px] text-gray-300 mt-1">Traders v1.0.0</p>
+        <p className="text-[10px] text-gray-300 dark:text-slate-600 mt-1">Traders v1.0.0</p>
       </div>
     </aside>
   );
