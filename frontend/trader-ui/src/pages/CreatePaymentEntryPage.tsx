@@ -278,6 +278,9 @@ export default function CreatePaymentEntryPage() {
     const mode = paymentModes.find((m) => m.name === modeOfPayment);
     const wantsBank = mode?.type === 'Bank' || modeOfPayment.toLowerCase().includes('bank');
     const typed = settlementAccounts.filter((a) => (wantsBank ? a.account_type === 'Bank' : a.account_type === 'Cash'));
+    if (wantsBank) {
+      return typed;
+    }
     return typed.length > 0 ? typed : settlementAccounts;
   }, [modeOfPayment, paymentModes, settlementAccounts]);
 
@@ -430,16 +433,23 @@ export default function CreatePaymentEntryPage() {
               </div>
             </Field>
             <Field label={paymentType === 'Receive' ? 'Deposit To' : 'Pay From'}>
-              <SearchableSelect
-                value={settlementAccount}
-                onChange={setSettlementAccount}
-                options={filteredSettlementAccounts.map((a) => ({
-                  label: settlementLabel(a),
-                  value: a.name,
-                }))}
-                placeholder={loading ? 'Loading…' : 'Select bank or cash account'}
-                disabled={loading || filteredSettlementAccounts.length === 0}
-              />
+              <div className="space-y-1">
+                <SearchableSelect
+                  value={settlementAccount}
+                  onChange={setSettlementAccount}
+                  options={filteredSettlementAccounts.map((a) => ({
+                    label: settlementLabel(a),
+                    value: a.name,
+                  }))}
+                  placeholder={loading ? 'Loading…' : 'Select bank or cash account'}
+                  disabled={loading || filteredSettlementAccounts.length === 0}
+                />
+                {!loading && requiresBankReference && filteredSettlementAccounts.length === 0 && (
+                  <p className="text-xs text-amber-700">
+                    No bank accounts are configured for this company. Refresh the page after your administrator adds bank GL accounts.
+                  </p>
+                )}
+              </div>
             </Field>
             {requiresBankReference && (
               <>

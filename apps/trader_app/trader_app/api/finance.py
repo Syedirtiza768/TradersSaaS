@@ -84,6 +84,7 @@ def get_payment_entry_setup(company=None):
     """Lookup payment modes, settlement accounts, and defaults for the form."""
     company = company or _default_company()
 
+    _ensure_company_bank_accounts(company)
     _ensure_payment_modes(company)
 
     modes = frappe.get_all(
@@ -491,7 +492,7 @@ def _get_default_account(company, account_type):
 
 def _get_settlement_accounts(company):
     """Selectable cash and bank GL accounts for payment settlement."""
-    return frappe.get_all(
+    accounts = frappe.get_all(
         "Account",
         filters={
             "company": company,
@@ -502,6 +503,116 @@ def _get_settlement_accounts(company):
         fields=["name", "account_name", "account_type", "account_number"],
         order_by="account_type asc, account_name asc, name asc",
     )
+
+    if any(row.account_type == "Bank" for row in accounts):
+        return accounts
+
+    # Charts often keep a Bank group with leaf children that lack account_type=Bank.
+    known = {row.name for row in accounts}
+    for parent in _get_bank_parent_accounts(company):
+        for child in frappe.get_all(
+            "Account",
+            filters={
+                "company": company,
+                "parent_account": parent,
+                "is_group": 0,
+                "disabled": 0,
+            },
+            fields=["name", "account_name", "account_type", "account_number"],
+            order_by="account_name asc, name asc",
+        ):
+            if child.name in known or child.account_type == "Cash":
+                continue
+            child.account_type = "Bank"
+            accounts.append(child)
+            known.add(child.name)
+
+    accounts.sort(key=lambda row: (row.account_type or "", row.account_name or row.name))
+    return accounts
+
+
+def _get_bank_parent_accounts(company):
+    parents = frappe.get_all(
+        "Account",
+        filters={
+            "company": company,
+            "account_type": "Bank",
+            "is_group": 1,
+            "disabled": 0,
+        },
+        fields=["name"],
+        order_by="name asc",
+    )
+    if parents:
+        return parents
+
+    return frappe.get_all(
+        "Account",
+        filters={
+            "company": company,
+            "root_type": "Asset",
+            "is_group": 1,
+            "disabled": 0,
+            "account_name": ["like", "%Bank%"],
+        },
+        fields=["name"],
+        order_by="name asc",
+        limit=5,
+    )
+
+
+def _ensure_company_bank_accounts(company):
+    """Ensure at least one leaf bank account exists for payment settlement (non-demo sites)."""
+    if frappe.get_all(
+        "Account",
+        filters={
+            "company": company,
+            "account_type": "Bank",
+            "is_group": 0,
+            "disabled": 0,
+        },
+        limit_page_length=1,
+    ):
+        return
+
+    if any(row.account_type == "Bank" for row in _get_settlement_accounts(company)):
+        return
+
+    parent_bank = (_get_bank_parent_accounts(company) or [None])[0]
+    parent_name = parent_bank.name if parent_bank else None
+    if not parent_name:
+        return
+
+    abbr = frappe.get_cached_value("Company", company, "abbr")
+    currency = frappe.get_cached_value("Company", company, "default_currency")
+
+    default_banks = [
+        "HBL Current Account",
+        "Meezan Business Account",
+        "UBL Collection Account",
+    ]
+
+    created = False
+    for account_name in default_banks:
+        full_name = f"{account_name} - {abbr}"
+        if frappe.db.exists("Account", full_name):
+            continue
+        try:
+            frappe.get_doc({
+                "doctype": "Account",
+                "account_name": account_name,
+                "parent_account": parent_name,
+                "company": company,
+                "account_type": "Bank",
+                "account_currency": currency,
+                "is_group": 0,
+            }).insert(ignore_permissions=True)
+            created = True
+        except frappe.DuplicateEntryError:
+            pass
+
+    if created:
+        frappe.db.commit()
 
 
 def _get_mode_of_payment_account(company, mode_of_payment):

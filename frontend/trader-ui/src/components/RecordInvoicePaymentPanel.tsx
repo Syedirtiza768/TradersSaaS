@@ -81,6 +81,9 @@ export default function RecordInvoicePaymentPanel({
     const mode = paymentModes.find((m) => m.name === modeOfPayment);
     const wantsBank = mode?.type === 'Bank' || modeOfPayment.toLowerCase().includes('bank');
     const typed = settlementAccounts.filter((a) => (wantsBank ? a.account_type === 'Bank' : a.account_type === 'Cash'));
+    if (wantsBank) {
+      return typed;
+    }
     return typed.length > 0 ? typed : settlementAccounts;
   }, [modeOfPayment, paymentModes, settlementAccounts]);
 
