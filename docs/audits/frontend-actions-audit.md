@@ -10,7 +10,7 @@ All forms, buttons, handlers, mutations, and interactive elements across the fro
 All page components in `frontend/trader-ui/src/pages/*.tsx`
 
 ## Last Audit Basis
-Full scan of all page component JSX and event handlers — 2026-05-15
+Full scan of all page component JSX and event handlers — 2026-05-16
 
 ---
 

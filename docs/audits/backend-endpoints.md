@@ -12,7 +12,7 @@ All backend API routes, their handlers, parameters, accessed entities, and front
 - `apps/trader_app/trader_app/api/reports.py`
 
 ## Last Audit Basis
-All `@frappe.whitelist()` decorated functions — 2026-05-15
+All `@frappe.whitelist()` decorated functions — 2026-05-16
 
 ---
 
