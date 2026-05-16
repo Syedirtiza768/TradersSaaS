@@ -128,6 +128,7 @@ def create_payment_entry(payment_type, party_type, party, amount,
     """Create a Payment Entry from the UI."""
     company = company or _default_company()
     mode_of_payment = _resolve_payment_mode(mode_of_payment)
+    party = _resolve_party(party_type, party)
 
     pe = frappe.new_doc("Payment Entry")
     pe.company = company
@@ -140,8 +141,9 @@ def create_payment_entry(payment_type, party_type, party, amount,
     if mode_of_payment:
         pe.mode_of_payment = mode_of_payment
 
-    settlement_account = _apply_settlement_account(
-        pe, company, payment_type, mode_of_payment, paid_to, paid_from
+    settlement_account, party_account = _apply_payment_accounts(
+        pe, company, payment_type, party_type, party,
+        mode_of_payment, paid_to, paid_from,
     )
 
     if reference_doctype and reference_name:
@@ -150,9 +152,6 @@ def create_payment_entry(payment_type, party_type, party, amount,
             "reference_name": reference_name,
             "allocated_amount": flt(amount),
         })
-
-    if hasattr(pe, "set_missing_values"):
-        pe.set_missing_values()
 
     pe.insert(ignore_permissions=False)
     return {
@@ -209,8 +208,8 @@ def record_invoice_payment(reference_doctype, reference_name, amount,
     if reference_no:
         pe.reference_no = reference_no
 
-    applied_account = _apply_settlement_account(
-        pe, company, payment_type, mode_of_payment,
+    applied_account, _party_account = _apply_payment_accounts(
+        pe, company, payment_type, party_type, party, mode_of_payment,
         paid_to=settlement_account if payment_type == "Receive" else None,
         paid_from=settlement_account if payment_type == "Pay" else None,
     )
@@ -220,9 +219,6 @@ def record_invoice_payment(reference_doctype, reference_name, amount,
         "reference_name": reference_name,
         "allocated_amount": pay_amount,
     })
-
-    if hasattr(pe, "set_missing_values"):
-        pe.set_missing_values()
 
     pe.insert(ignore_permissions=False)
 
@@ -533,19 +529,64 @@ def _resolve_settlement_account(company, payment_type, mode_of_payment=None,
     return _get_default_account(company, "Cash") or _get_default_account(company, "Bank")
 
 
-def _apply_settlement_account(pe, company, payment_type, mode_of_payment=None,
-                              paid_to=None, paid_from=None):
-    account = _resolve_settlement_account(
+def _resolve_party(party_type, party):
+    """Accept party doc name or display name from deep links."""
+    if not party:
+        frappe.throw(_("Party is required."))
+
+    if frappe.db.exists(party_type, party):
+        return party
+
+    name_field = "customer_name" if party_type == "Customer" else "supplier_name"
+    resolved = frappe.db.get_value(party_type, {name_field: party}, "name")
+    if resolved:
+        return resolved
+
+    resolved = frappe.db.get_value(
+        party_type,
+        {name_field: ["like", f"%{party}%"]},
+        "name",
+    )
+    if resolved:
+        return resolved
+
+    frappe.throw(_("{0} {1} was not found.").format(party_type, party))
+
+
+def _get_party_ledger_account(company, party_type, party):
+    from erpnext.accounts.party import get_party_account
+
+    return get_party_account(party_type, party, company)
+
+
+def _apply_payment_accounts(pe, company, payment_type, party_type, party,
+                            mode_of_payment=None, paid_to=None, paid_from=None):
+    """Set bank/cash and receivable/payable accounts before insert."""
+    settlement_account = _resolve_settlement_account(
         company, payment_type, mode_of_payment, paid_to, paid_from
     )
-    if not account:
+    if not settlement_account:
         frappe.throw(_("No cash or bank account found for company {0}.").format(company))
 
+    party_account = _get_party_ledger_account(company, party_type, party)
+
     if payment_type == "Receive":
-        pe.paid_to = account
+        pe.paid_to = settlement_account
+        pe.paid_from = party_account
     else:
-        pe.paid_from = account
-    return account
+        pe.paid_from = settlement_account
+        pe.paid_to = party_account
+
+    return settlement_account, party_account
+
+
+def _apply_settlement_account(pe, company, payment_type, mode_of_payment=None,
+                              paid_to=None, paid_from=None):
+    settlement_account, _party_account = _apply_payment_accounts(
+        pe, company, payment_type, pe.party_type, pe.party,
+        mode_of_payment, paid_to, paid_from,
+    )
+    return settlement_account
 
 
 def _ensure_payment_modes(company=None):
