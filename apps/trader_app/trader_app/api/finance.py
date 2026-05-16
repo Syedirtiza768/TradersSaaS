@@ -124,7 +124,8 @@ def get_payment_entry_setup(company=None):
 def create_payment_entry(payment_type, party_type, party, amount,
                          company=None, posting_date=None,
                          reference_doctype=None, reference_name=None,
-                         mode_of_payment=None, paid_to=None, paid_from=None):
+                         mode_of_payment=None, paid_to=None, paid_from=None,
+                         reference_no=None, reference_date=None):
     """Create a Payment Entry from the UI."""
     company = company or _default_company()
     mode_of_payment = _resolve_payment_mode(mode_of_payment)
@@ -153,6 +154,13 @@ def create_payment_entry(payment_type, party_type, party, amount,
             "allocated_amount": flt(amount),
         })
 
+    _apply_bank_reference_fields(
+        pe,
+        reference_no=reference_no,
+        reference_date=reference_date,
+        fallback_reference=reference_name,
+    )
+
     pe.insert(ignore_permissions=False)
     return {
         "name": pe.name,
@@ -164,7 +172,8 @@ def create_payment_entry(payment_type, party_type, party, amount,
 @frappe.whitelist()
 def record_invoice_payment(reference_doctype, reference_name, amount,
                            mode_of_payment=None, settlement_account=None,
-                           posting_date=None, reference_no=None, submit=1):
+                           posting_date=None, reference_no=None,
+                           reference_date=None, submit=1):
     """Record and optionally submit a payment against an invoice into a bank/cash account."""
     if reference_doctype not in ("Sales Invoice", "Purchase Invoice"):
         frappe.throw(_("Only Sales Invoice and Purchase Invoice are supported."))
@@ -205,8 +214,6 @@ def record_invoice_payment(reference_doctype, reference_name, amount,
     pe.received_amount = pay_amount
     if mode_of_payment:
         pe.mode_of_payment = mode_of_payment
-    if reference_no:
-        pe.reference_no = reference_no
 
     applied_account, _party_account = _apply_payment_accounts(
         pe, company, payment_type, party_type, party, mode_of_payment,
@@ -219,6 +226,13 @@ def record_invoice_payment(reference_doctype, reference_name, amount,
         "reference_name": reference_name,
         "allocated_amount": pay_amount,
     })
+
+    _apply_bank_reference_fields(
+        pe,
+        reference_no=reference_no,
+        reference_date=reference_date,
+        fallback_reference=reference_name,
+    )
 
     pe.insert(ignore_permissions=False)
 
@@ -557,6 +571,30 @@ def _get_party_ledger_account(company, party_type, party):
     from erpnext.accounts.party import get_party_account
 
     return get_party_account(party_type, party, company)
+
+
+def _apply_bank_reference_fields(pe, reference_no=None, reference_date=None,
+                                 fallback_reference=None):
+    """ERPNext requires reference_no and reference_date when settlement account is Bank."""
+    bank_account = pe.paid_to if pe.payment_type == "Receive" else pe.paid_from
+    if not bank_account:
+        return
+
+    if frappe.get_cached_value("Account", bank_account, "account_type") != "Bank":
+        return
+
+    pe.reference_date = reference_date or pe.reference_date or pe.posting_date or nowdate()
+
+    if reference_no:
+        pe.reference_no = reference_no
+    elif pe.reference_no:
+        pass
+    elif fallback_reference:
+        pe.reference_no = fallback_reference
+    elif pe.get("references"):
+        pe.reference_no = pe.references[0].reference_name
+    else:
+        pe.reference_no = f"{pe.payment_type}-{pe.party}-{pe.posting_date}"
 
 
 def _apply_payment_accounts(pe, company, payment_type, party_type, party,

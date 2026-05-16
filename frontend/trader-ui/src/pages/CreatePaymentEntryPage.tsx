@@ -60,6 +60,8 @@ export default function CreatePaymentEntryPage() {
   const [settlementAccounts, setSettlementAccounts] = useState<SettlementAccount[]>([]);
   const [modeAccounts, setModeAccounts] = useState<Record<string, string>>({});
   const [settlementAccount, setSettlementAccount] = useState('');
+  const [referenceNo, setReferenceNo] = useState(searchParams.get('referenceName') || '');
+  const [referenceDate, setReferenceDate] = useState(searchParams.get('postingDate') || today());
   const [accountDefaults, setAccountDefaults] = useState<Record<string, string>>({});
   const [loadingReferences, setLoadingReferences] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -299,10 +301,20 @@ export default function CreatePaymentEntryPage() {
     }
   }, [selectedReference]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (referenceName && !referenceNo) {
+      setReferenceNo(referenceName);
+    }
+  }, [referenceName, referenceNo]);
+
   const effectiveAccount = settlementAccount
     || (paymentType === 'Receive'
       ? (modeOfPayment.toLowerCase().includes('bank') ? accountDefaults.bank_account : accountDefaults.receive_account)
       : (modeOfPayment.toLowerCase().includes('bank') ? accountDefaults.bank_account : accountDefaults.pay_account));
+
+  const selectedSettlementAccount = settlementAccounts.find((a) => a.name === settlementAccount);
+  const requiresBankReference = selectedSettlementAccount?.account_type === 'Bank'
+    || (!selectedSettlementAccount && modeOfPayment.toLowerCase().includes('bank'));
 
   const settlementLabel = (account: SettlementAccount) => {
     const typeLabel = account.account_type === 'Bank' ? 'Bank' : 'Cash';
@@ -317,6 +329,11 @@ export default function CreatePaymentEntryPage() {
 
     if (!amount || amount <= 0) {
       setError('Enter a valid payment amount.');
+      return;
+    }
+
+    if (requiresBankReference && !referenceNo.trim()) {
+      setError('Reference No is required for bank payments.');
       return;
     }
 
@@ -335,6 +352,8 @@ export default function CreatePaymentEntryPage() {
         ...(paymentType === 'Receive'
           ? { paid_to: settlementAccount || undefined }
           : { paid_from: settlementAccount || undefined }),
+        reference_no: referenceNo.trim() || referenceName || undefined,
+        reference_date: requiresBankReference ? (referenceDate || postingDate) : undefined,
       });
       const created = response.data.message;
       navigate(appendPreservedListQuery(`/finance/payments/${encodeURIComponent(created.name)}`, listSearch));
@@ -422,6 +441,27 @@ export default function CreatePaymentEntryPage() {
                 disabled={loading || filteredSettlementAccounts.length === 0}
               />
             </Field>
+            {requiresBankReference && (
+              <>
+                <Field label="Reference No">
+                  <input
+                    type="text"
+                    value={referenceNo}
+                    onChange={(e) => setReferenceNo(e.target.value)}
+                    className="input-field"
+                    placeholder="Cheque / transfer reference"
+                  />
+                </Field>
+                <Field label="Reference Date">
+                  <input
+                    type="date"
+                    value={referenceDate}
+                    onChange={(e) => setReferenceDate(e.target.value)}
+                    className="input-field"
+                  />
+                </Field>
+              </>
+            )}
             <Field label="Reference Doctype">
               <input value={referenceDoctype} onChange={(e) => setReferenceDoctype(e.target.value)} className="input-field bg-gray-50" placeholder="Optional" disabled />
             </Field>

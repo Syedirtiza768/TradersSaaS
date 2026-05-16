@@ -35,7 +35,8 @@ export default function RecordInvoicePaymentPanel({
   const [postingDate, setPostingDate] = useState(today());
   const [modeOfPayment, setModeOfPayment] = useState('');
   const [settlementAccount, setSettlementAccount] = useState('');
-  const [referenceNo, setReferenceNo] = useState('');
+  const [referenceNo, setReferenceNo] = useState(referenceName);
+  const [referenceDate, setReferenceDate] = useState(today());
   const [paymentModes, setPaymentModes] = useState<PaymentMode[]>([]);
   const [settlementAccounts, setSettlementAccounts] = useState<SettlementAccount[]>([]);
   const [modeAccounts, setModeAccounts] = useState<Record<string, string>>({});
@@ -98,6 +99,10 @@ export default function RecordInvoicePaymentPanel({
     });
   }, [filteredAccounts, loadingSetup, modeAccounts, modeOfPayment]);
 
+  const selectedSettlementAccount = settlementAccounts.find((a) => a.name === settlementAccount);
+  const requiresBankReference = selectedSettlementAccount?.account_type === 'Bank'
+    || (!selectedSettlementAccount && modeOfPayment.toLowerCase().includes('bank'));
+
   const accountLabel = (account: SettlementAccount) => {
     const typeLabel = account.account_type === 'Bank' ? 'Bank' : 'Cash';
     const name = account.account_name || account.name;
@@ -130,7 +135,8 @@ export default function RecordInvoicePaymentPanel({
         mode_of_payment: modeOfPayment || undefined,
         settlement_account: settlementAccount,
         posting_date: postingDate,
-        reference_no: referenceNo || undefined,
+        reference_no: referenceNo.trim() || referenceName,
+        reference_date: referenceDate || postingDate,
         submit: 1,
       });
       const result = response.data.message;
@@ -214,7 +220,7 @@ export default function RecordInvoicePaymentPanel({
                 placeholder="Select bank or cash account"
               />
             </Field>
-            <Field label="Reference No (optional)">
+            <Field label={requiresBankReference ? 'Reference No' : 'Reference No (optional)'}>
               <input
                 type="text"
                 value={referenceNo}
@@ -223,6 +229,16 @@ export default function RecordInvoicePaymentPanel({
                 placeholder="Cheque / transfer reference"
               />
             </Field>
+            {requiresBankReference && (
+              <Field label="Reference Date">
+                <input
+                  type="date"
+                  value={referenceDate}
+                  onChange={(e) => setReferenceDate(e.target.value)}
+                  className="input-field"
+                />
+              </Field>
+            )}
           </div>
         )}
         <p className="text-xs text-gray-500">
