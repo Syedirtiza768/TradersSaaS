@@ -64,6 +64,13 @@ async function frappeGuestBootstrap(): Promise<void> {
 
 /** Strip keys whose value is undefined — Frappe serialises them as the
  *  literal string "undefined" which causes 400 BAD REQUEST errors. */
+let activeCompanyGetter: () => string | undefined = () => undefined;
+
+/** Register active company from companyStore (called at app init). */
+export function registerActiveCompanyGetter(fn: () => string | undefined): void {
+  activeCompanyGetter = fn;
+}
+
 function clean(obj?: Record<string, any>): Record<string, any> | undefined {
   if (!obj) return undefined;
   const out: Record<string, any> = {};
@@ -73,13 +80,52 @@ function clean(obj?: Record<string, any>): Record<string, any> | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
+const COMPANY_EXEMPT_METHODS = new Set([
+  'trader_app.api.company.get_companies',
+  'trader_app.api.company.get_active_company',
+  'trader_app.api.company.set_active_company',
+  'trader_app.api.settings.get_settings',
+  'trader_app.api.settings.save_settings',
+  'trader_app.api.settings.get_current_user_roles',
+  'trader_app.api.settings.get_trader_roles',
+  'trader_app.api.reports.get_consolidated_company_summary',
+  'trader_app.api.currency.get_currency_options',
+  'trader_app.api.currency.get_exchange_rate_for_date',
+  'trader_app.api.currency.get_currency_settings',
+  'trader_app.api.currency.save_currency_settings',
+  'trader_app.api.currency.save_exchange_rate',
+  'trader_app.api.currency.delete_exchange_rate',
+]);
+
+function withCompany(method: string, params?: Record<string, any>): Record<string, any> | undefined {
+  const base = clean(params) || {};
+  if (COMPANY_EXEMPT_METHODS.has(method)) return Object.keys(base).length ? base : undefined;
+  if (base.company !== undefined && base.company !== null && base.company !== '') return base;
+  const company = activeCompanyGetter();
+  if (!company || !method.startsWith('trader_app.api.')) return Object.keys(base).length ? base : undefined;
+  return { ...base, company };
+}
+
 function call<T = any>(method: string, params?: Record<string, any>): Promise<AxiosResponse<{ message: T }>> {
-  return http.post('/api/method/' + method, clean(params));
+  return http.post('/api/method/' + method, withCompany(method, params));
 }
 
 function get<T = any>(method: string, params?: Record<string, any>): Promise<AxiosResponse<{ message: T }>> {
-  return http.get('/api/method/' + method, { params: clean(params) });
+  return http.get('/api/method/' + method, { params: withCompany(method, params) });
 }
+
+// ─── Company API ─────────────────────────────────────────────────
+
+export const companyApi = {
+  getCompanies: () =>
+    get('trader_app.api.company.get_companies'),
+
+  getActive: () =>
+    get('trader_app.api.company.get_active_company'),
+
+  setActive: (company: string) =>
+    call('trader_app.api.company.set_active_company', { company }),
+};
 
 // ─── Auth API ────────────────────────────────────────────────────
 
@@ -124,6 +170,9 @@ export const dashboardApi = {
 // ─── Sales API ───────────────────────────────────────────────────
 
 export const salesApi = {
+  getDocumentCatalog: () =>
+    get('trader_app.api.sales.get_sales_document_catalog'),
+
   getInvoices: (params?: Record<string, any>) =>
     get('trader_app.api.sales.get_sales_invoices', params),
 
@@ -141,6 +190,9 @@ export const salesApi = {
 
   getQuotationDetail: (name: string) =>
     get('trader_app.api.sales.get_quotation_detail', { name }),
+
+  getCustomerItemSalesHistory: (params: { customer: string; item_code: string; company?: string; limit?: number }) =>
+    get('trader_app.api.sales.get_customer_item_sales_history', params),
 
   createInvoice: (data: Record<string, any>) =>
     call('trader_app.api.sales.create_sales_invoice', data),
@@ -169,6 +221,21 @@ export const salesApi = {
   createReturnInvoice: (data: Record<string, any>) =>
     call('trader_app.api.sales.create_sales_invoice', { ...data, is_return: 1 }),
 
+  getDeliveryNotes: (params?: Record<string, any>) =>
+    get('trader_app.api.sales.get_delivery_notes', params),
+
+  getDeliveryNoteDetail: (name: string) =>
+    get('trader_app.api.sales.get_delivery_note_detail', { name }),
+
+  createDeliveryNote: (data: Record<string, any>) =>
+    call('trader_app.api.sales.create_delivery_note', data),
+
+  submitDeliveryNote: (name: string) =>
+    call('trader_app.api.sales.submit_delivery_note', { name }),
+
+  cancelDeliveryNote: (name: string) =>
+    call('trader_app.api.sales.cancel_delivery_note', { name }),
+
   getSummary: (company?: string) =>
     get('trader_app.api.sales.get_sales_summary', { company }),
 };
@@ -176,6 +243,9 @@ export const salesApi = {
 // ─── Purchases API ───────────────────────────────────────────────
 
 export const purchasesApi = {
+  getDocumentCatalog: () =>
+    get('trader_app.api.purchases.get_purchase_document_catalog'),
+
   getInvoices: (params?: Record<string, any>) =>
     get('trader_app.api.purchases.get_purchase_invoices', params),
 
@@ -263,6 +333,21 @@ export const inventoryApi = {
 
   getWarehouses: (company?: string) =>
     get('trader_app.api.inventory.get_warehouses', { company }),
+
+  getWarehouseItemQty: (item_code: string, warehouse: string, company?: string) =>
+    get('trader_app.api.inventory.get_warehouse_item_qty', { item_code, warehouse, company }),
+
+  validateSerialForItem: (params: { item_code: string; serial_no: string; warehouse?: string; company?: string }) =>
+    get('trader_app.api.inventory.validate_serial_for_item', params),
+
+  validateItemsStock: (items: { item_code: string; warehouse: string; qty: number }[]) =>
+    call('trader_app.api.inventory.validate_items_stock', { items }),
+
+  validateSerialForPurchase: (params: { item_code: string; serial_no: string; company?: string }) =>
+    get('trader_app.api.inventory.validate_serial_for_purchase', params),
+
+  lookupByBarcode: (barcode: string, company?: string) =>
+    get('trader_app.api.inventory.lookup_item_by_barcode', { barcode, company }),
 
   getSummary: (company?: string) =>
     get('trader_app.api.inventory.get_inventory_summary', { company }),
@@ -478,9 +563,82 @@ export const reportsApi = {
 
   getItemPurchaseReport: (params?: Record<string, any>) =>
     get('trader_app.api.reports.get_item_purchase_report', params),
+
+  getConsolidatedCompanySummary: (params?: Record<string, any>) =>
+    get('trader_app.api.reports.get_consolidated_company_summary', params),
+
+  getTrialBalanceReport: (params?: Record<string, any>) =>
+    get('trader_app.api.reports.get_trial_balance_report', params),
+
+  getBalanceSheetReport: (params?: Record<string, any>) =>
+    get('trader_app.api.reports.get_balance_sheet_report', params),
+
+  getSerialTraceReport: (params?: Record<string, any>) =>
+    get('trader_app.api.reports.get_serial_trace_report', params),
+
+  getFxGainLossReport: (params?: Record<string, any>) =>
+    get('trader_app.api.reports.get_fx_gain_loss_report', params),
+};
+
+// ─── Audit API ─────────────────────────────────────────────────────
+
+export const auditApi = {
+  getLog: (params?: Record<string, any>) =>
+    get('trader_app.api.audit.get_audit_log', params),
 };
 
 export default http;
+
+// ─── Currency API ──────────────────────────────────────────────────
+
+export const currencyApi = {
+  getOptions: (company?: string) =>
+    get('trader_app.api.currency.get_currency_options', { company }),
+
+  getExchangeRate: (currency: string, posting_date?: string, transaction_type: 'selling' | 'buying' = 'selling') =>
+    get('trader_app.api.currency.get_exchange_rate_for_date', {
+      currency,
+      posting_date,
+      transaction_type,
+    }),
+
+  getSettings: (company?: string) =>
+    get('trader_app.api.currency.get_currency_settings', { company }),
+
+  saveSettings: (data: {
+    base_currency?: string;
+    multi_currency_enabled?: boolean | number;
+    enabled_currencies?: string[];
+    company?: string;
+  }) => call('trader_app.api.currency.save_currency_settings', data),
+
+  saveExchangeRate: (data: {
+    from_currency: string;
+    exchange_rate: number;
+    to_currency?: string;
+    date?: string;
+    for_selling?: boolean | number;
+    for_buying?: boolean | number;
+    company?: string;
+  }) => call('trader_app.api.currency.save_exchange_rate', data),
+
+  deleteExchangeRate: (name: string) =>
+    call('trader_app.api.currency.delete_exchange_rate', { name }),
+};
+
+// ─── POS API ───────────────────────────────────────────────────────
+
+export const posApi = {
+  getSetup: (company?: string) =>
+    get('trader_app.api.pos.get_pos_setup', { company }),
+
+  createSale: (data: Record<string, any>) =>
+    call('trader_app.api.pos.create_pos_sale', {
+      submit: 1,
+      record_payment: 0,
+      ...data,
+    }),
+};
 
 // ─── Settings API ────────────────────────────────────────────────
 

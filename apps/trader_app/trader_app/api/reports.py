@@ -18,6 +18,7 @@ from __future__ import unicode_literals
 
 import frappe
 from frappe import _
+from trader_app.api.company import resolve_active_company
 from frappe.utils import nowdate, getdate, add_months, flt, cint
 
 
@@ -29,7 +30,7 @@ from frappe.utils import nowdate, getdate, add_months, flt, cint
 def get_sales_report(company=None, from_date=None, to_date=None,
                      customer=None, item_group=None):
     """Sales report — grouped by month."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date = from_date or add_months(nowdate(), -12)
     to_date = to_date or nowdate()
 
@@ -78,7 +79,7 @@ def get_sales_report(company=None, from_date=None, to_date=None,
 def get_purchase_report(company=None, from_date=None, to_date=None,
                         supplier=None):
     """Purchase report — grouped by month."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date = from_date or add_months(nowdate(), -12)
     to_date = to_date or nowdate()
 
@@ -126,7 +127,7 @@ def get_purchase_report(company=None, from_date=None, to_date=None,
 def get_item_sales_report(company=None, from_date=None, to_date=None,
                           item_group=None, page=1, page_size=20):
     """Top selling items."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date = from_date or add_months(nowdate(), -12)
     to_date = to_date or nowdate()
     page = cint(page) or 1
@@ -177,7 +178,7 @@ def get_item_sales_report(company=None, from_date=None, to_date=None,
 @frappe.whitelist()
 def get_customer_ledger(customer, company=None, from_date=None, to_date=None):
     """GL entries for a specific customer."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date = from_date or add_months(nowdate(), -12)
     to_date = to_date or nowdate()
 
@@ -207,7 +208,7 @@ def get_customer_ledger(customer, company=None, from_date=None, to_date=None):
 @frappe.whitelist()
 def get_supplier_ledger(supplier, company=None, from_date=None, to_date=None):
     """GL entries for a specific supplier."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date = from_date or add_months(nowdate(), -12)
     to_date = to_date or nowdate()
 
@@ -236,7 +237,7 @@ def get_supplier_ledger(supplier, company=None, from_date=None, to_date=None):
 @frappe.whitelist()
 def get_receivable_aging(company=None):
     """Receivable aging summary — buckets 0-30, 31-60, 61-90, 90+."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     today = nowdate()
 
     rows = frappe.db.sql("""
@@ -256,7 +257,7 @@ def get_receivable_aging(company=None):
 @frappe.whitelist()
 def get_receivable_aging_detail(company=None, page=1, page_size=20):
     """Per-customer receivable aging."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     today = nowdate()
     page = cint(page) or 1
     page_size = min(cint(page_size) or 20, 100)
@@ -292,7 +293,7 @@ def get_receivable_aging_detail(company=None, page=1, page_size=20):
 @frappe.whitelist()
 def get_payable_aging(company=None):
     """Payable aging summary."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     today = nowdate()
 
     rows = frappe.db.sql("""
@@ -316,7 +317,7 @@ def get_payable_aging(company=None):
 @frappe.whitelist()
 def get_profit_and_loss(company=None, from_date=None, to_date=None):
     """Simple P&L summary using GL Entries."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
 
     fy = _current_fiscal_year(company)
     from_date = from_date or fy["from"]
@@ -369,7 +370,7 @@ def get_profit_and_loss(company=None, from_date=None, to_date=None):
 def get_general_ledger(company=None, account=None, from_date=None, to_date=None,
                        page=1, page_size=50):
     """General Ledger report."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date = from_date or add_months(nowdate(), -3)
     to_date = to_date or nowdate()
     page = cint(page) or 1
@@ -417,16 +418,85 @@ def get_accounts_payable(company=None):
     return get_payable_aging(company)
 
 
+# ── CONSOLIDATED MULTI-COMPANY SUMMARY ─────────────────────────
+@frappe.whitelist()
+def get_consolidated_company_summary(from_date=None, to_date=None):
+    """Per-company KPI rollup across all companies the user may access."""
+    from trader_app.api.company import get_permitted_company_names
+
+    from_date, to_date = _date_range(from_date, to_date)
+    companies = get_permitted_company_names()
+    rows = []
+    summary = {
+        "company_count": len(companies),
+        "sales": 0,
+        "purchases": 0,
+        "receivables": 0,
+        "payables": 0,
+        "stock_value": 0,
+    }
+
+    for company in companies:
+        currency = frappe.get_cached_value("Company", company, "default_currency") or "PKR"
+        sales = flt(frappe.db.sql("""
+            SELECT COALESCE(SUM(grand_total), 0)
+            FROM `tabSales Invoice`
+            WHERE company = %s AND docstatus = 1
+              AND posting_date BETWEEN %s AND %s
+        """, (company, from_date, to_date))[0][0])
+
+        purchases = flt(frappe.db.sql("""
+            SELECT COALESCE(SUM(grand_total), 0)
+            FROM `tabPurchase Invoice`
+            WHERE company = %s AND docstatus = 1
+              AND posting_date BETWEEN %s AND %s
+        """, (company, from_date, to_date))[0][0])
+
+        receivables = flt(frappe.db.sql("""
+            SELECT COALESCE(SUM(outstanding_amount), 0)
+            FROM `tabSales Invoice`
+            WHERE company = %s AND docstatus = 1 AND outstanding_amount > 0
+        """, (company,))[0][0])
+
+        payables = flt(frappe.db.sql("""
+            SELECT COALESCE(SUM(outstanding_amount), 0)
+            FROM `tabPurchase Invoice`
+            WHERE company = %s AND docstatus = 1 AND outstanding_amount > 0
+        """, (company,))[0][0])
+
+        stock_value = flt(frappe.db.sql("""
+            SELECT COALESCE(SUM(b.stock_value), 0)
+            FROM `tabBin` b
+            INNER JOIN `tabWarehouse` w ON w.name = b.warehouse
+            WHERE w.company = %s
+        """, (company,))[0][0])
+
+        rows.append({
+            "company": company,
+            "currency": currency,
+            "sales": sales,
+            "purchases": purchases,
+            "receivables": receivables,
+            "payables": payables,
+            "stock_value": stock_value,
+        })
+        summary["sales"] += sales
+        summary["purchases"] += purchases
+        summary["receivables"] += receivables
+        summary["payables"] += payables
+        summary["stock_value"] += stock_value
+
+    return {
+        "data": rows,
+        "summary": summary,
+        "from_date": from_date,
+        "to_date": to_date,
+    }
+
+
 # ────────────────────────────────────────────────────────────────
 #    HELPERS
 # ────────────────────────────────────────────────────────────────
-
-def _default_company():
-    return (
-        frappe.defaults.get_user_default("Company")
-        or frappe.db.get_single_value("Global Defaults", "default_company")
-        or frappe.get_all("Company", limit=1, pluck="name")[0]
-    )
 
 
 def _current_fiscal_year(company):
@@ -484,7 +554,7 @@ def get_sales_performance_report(company=None, from_date=None, to_date=None,
                                   sort_by='net_sales', sort_order='desc',
                                   page=1, page_size=20, format=None):
     """Sales performance — groupable by month, customer, item, item_group, brand, sales_person."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
     page, page_size, offset = _paginate(page, page_size)
 
@@ -609,7 +679,7 @@ def get_customer_profitability_report(company=None, from_date=None, to_date=None
                                        customer_group=None, territory=None,
                                        page=1, page_size=20, format=None):
     """Customer profitability — revenue, GP, margins, outstanding, payment days."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
     page, page_size, offset = _paginate(page, page_size)
 
@@ -673,7 +743,7 @@ def get_customer_profitability_report(company=None, from_date=None, to_date=None
 def get_stock_aging_report(company=None, warehouse=None, item_group=None,
                            brand=None, page=1, page_size=20, format=None):
     """Stock aging — bucket by days since last inward transaction."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page, page_size, offset = _paginate(page, page_size)
 
     conditions = ["w.company = %(company)s", "b.actual_qty > 0"]
@@ -765,7 +835,7 @@ def get_stock_aging_report(company=None, warehouse=None, item_group=None,
 def get_inventory_movement_report(company=None, warehouse=None, item_group=None,
                                    brand=None, page=1, page_size=20, format=None):
     """Classify inventory as fast, slow, or non-moving based on sales velocity."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page, page_size, offset = _paginate(page, page_size)
     today = nowdate()
     d30 = add_months(today, -1)
@@ -882,7 +952,7 @@ def get_inventory_movement_report(company=None, warehouse=None, item_group=None,
 def get_reorder_report(company=None, warehouse=None, item_group=None,
                        page=1, page_size=20, format=None):
     """Items with stock cover analysis and reorder recommendations."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page, page_size, offset = _paginate(page, page_size)
     d30 = add_months(nowdate(), -1)
 
@@ -976,7 +1046,7 @@ def get_reorder_report(company=None, warehouse=None, item_group=None,
 def get_supplier_scorecard_report(company=None, from_date=None, to_date=None,
                                    supplier=None, page=1, page_size=20, format=None):
     """Supplier scorecard — cost, delivery, and quality metrics."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
     page, page_size, offset = _paginate(page, page_size)
 
@@ -1033,7 +1103,7 @@ def get_purchase_price_variance_report(company=None, from_date=None, to_date=Non
                                         supplier=None, item_code=None, item_group=None,
                                         page=1, page_size=20, format=None):
     """Purchase price variance — detect cost drift per item/supplier."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
     page, page_size, offset = _paginate(page, page_size)
 
@@ -1103,7 +1173,7 @@ def get_purchase_price_variance_report(company=None, from_date=None, to_date=Non
 def get_receivable_aging_invoice_detail(company=None, customer=None,
                                          bucket=None, page=1, page_size=20, format=None):
     """Invoice-level receivable aging detail."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page, page_size, offset = _paginate(page, page_size)
     today = nowdate()
 
@@ -1173,7 +1243,7 @@ def get_receivable_aging_invoice_detail(company=None, customer=None,
 def get_payable_aging_invoice_detail(company=None, supplier=None,
                                       bucket=None, page=1, page_size=20, format=None):
     """Invoice-level payable aging detail."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page, page_size, offset = _paginate(page, page_size)
     today = nowdate()
 
@@ -1242,7 +1312,7 @@ def get_payable_aging_invoice_detail(company=None, supplier=None,
 @frappe.whitelist()
 def get_tax_summary_report(company=None, from_date=None, to_date=None, format=None):
     """Tax summary — output tax (sales) vs input tax (purchases)."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
     params = {"company": company, "from_date": from_date, "to_date": to_date}
 
@@ -1300,7 +1370,7 @@ def get_tax_summary_report(company=None, from_date=None, to_date=None, format=No
 def get_open_purchase_orders_report(company=None, supplier=None, warehouse=None,
                                      page=1, page_size=20, format=None):
     """Open purchase order items — pending receipt."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page, page_size, offset = _paginate(page, page_size)
 
     conditions = [
@@ -1369,7 +1439,7 @@ def get_open_purchase_orders_report(company=None, supplier=None, warehouse=None,
 def get_collection_efficiency_report(company=None, from_date=None, to_date=None,
                                       group_by='month', page=1, page_size=20, format=None):
     """Collection efficiency — billed vs collected by period or customer."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
     page, page_size, offset = _paginate(page, page_size)
 
@@ -1423,7 +1493,7 @@ def get_collection_efficiency_report(company=None, from_date=None, to_date=None,
 def get_daily_sales_report(company=None, from_date=None, to_date=None,
                            page=1, page_size=50, format=None):
     """Daily sales breakdown — invoice count, revenue, outstanding per day."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date, default_months=1)
     page, page_size, offset = _paginate(page, page_size)
 
@@ -1478,7 +1548,7 @@ def get_daily_sales_report(company=None, from_date=None, to_date=None,
 def get_sales_return_report(company=None, from_date=None, to_date=None,
                             customer=None, page=1, page_size=50, format=None):
     """Sales returns (credit notes) — grouped by customer."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
     page, page_size, offset = _paginate(page, page_size)
 
@@ -1529,7 +1599,7 @@ def get_sales_return_report(company=None, from_date=None, to_date=None,
 def get_purchase_return_report(company=None, from_date=None, to_date=None,
                                supplier=None, page=1, page_size=50, format=None):
     """Purchase returns (debit notes) — grouped by supplier."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
     page, page_size, offset = _paginate(page, page_size)
 
@@ -1580,7 +1650,7 @@ def get_purchase_return_report(company=None, from_date=None, to_date=None,
 def get_cashflow_report(company=None, from_date=None, to_date=None,
                         group_by='month', page=1, page_size=50, format=None):
     """Cash flow — payment entries in vs out, grouped by month or payment type."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
     page, page_size, offset = _paginate(page, page_size)
 
@@ -1633,7 +1703,7 @@ def get_cashflow_report(company=None, from_date=None, to_date=None,
 def get_profit_loss_summary_report(company=None, from_date=None, to_date=None,
                                     format=None):
     """Enhanced P&L — income, COGS, gross profit, expenses, net profit via GL entries."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
 
     params = {"company": company, "from_date": from_date, "to_date": to_date}
@@ -1696,7 +1766,7 @@ def get_profit_loss_summary_report(company=None, from_date=None, to_date=None,
 def get_stock_balance_report(company=None, warehouse=None, item_group=None,
                              page=1, page_size=50, format=None):
     """Warehouse-wise stock balance and value from Bin table."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page, page_size, offset = _paginate(page, page_size)
 
     conditions = ["b.actual_qty != 0"]
@@ -1768,7 +1838,7 @@ def get_stock_balance_report(company=None, warehouse=None, item_group=None,
 def get_salesperson_performance_report(company=None, from_date=None, to_date=None,
                                         page=1, page_size=50, format=None):
     """Revenue, GP, margin and contribution per salesperson."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
     page, page_size, offset = _paginate(page, page_size)
 
@@ -1827,7 +1897,7 @@ def get_item_purchase_report(company=None, from_date=None, to_date=None,
                              item_group=None, supplier=None,
                              page=1, page_size=50, format=None):
     """Item-wise purchase breakdown — qty, value, avg rate, supplier count."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     from_date, to_date = _date_range(from_date, to_date)
     page, page_size, offset = _paginate(page, page_size)
 
@@ -1888,3 +1958,370 @@ def get_item_purchase_report(company=None, from_date=None, to_date=None,
         return
 
     return {"summary": summary, "data": rows, "total": cint(total), "page": page, "page_size": page_size}
+
+
+# ── 30. TRIAL BALANCE ────────────────────────────────────────────
+def _split_debit_credit(net_amount):
+    """Split signed net (debit − credit) into debit and credit columns."""
+    net = flt(net_amount)
+    if net >= 0:
+        return net, 0
+    return 0, abs(net)
+
+
+@frappe.whitelist()
+def get_trial_balance_report(company=None, from_date=None, to_date=None, format=None):
+    """Trial balance — opening, period movement, and closing per account."""
+    company = resolve_active_company(company)
+    from_date, to_date = _date_range(from_date, to_date, default_months=1)
+
+    params = {"company": company, "from_date": from_date, "to_date": to_date}
+
+    raw = frappe.db.sql("""
+        SELECT a.name AS account,
+               COALESCE(a.account_name, a.name) AS account_name,
+               a.root_type,
+               a.parent_account,
+               COALESCE(SUM(CASE WHEN gle.posting_date < %(from_date)s THEN gle.debit ELSE 0 END), 0) AS opening_debit,
+               COALESCE(SUM(CASE WHEN gle.posting_date < %(from_date)s THEN gle.credit ELSE 0 END), 0) AS opening_credit,
+               COALESCE(SUM(CASE WHEN gle.posting_date BETWEEN %(from_date)s AND %(to_date)s THEN gle.debit ELSE 0 END), 0) AS debit,
+               COALESCE(SUM(CASE WHEN gle.posting_date BETWEEN %(from_date)s AND %(to_date)s THEN gle.credit ELSE 0 END), 0) AS credit
+        FROM `tabAccount` a
+        INNER JOIN `tabGL Entry` gle
+            ON gle.account = a.name
+           AND gle.company = %(company)s
+           AND gle.is_cancelled = 0
+        WHERE a.company = %(company)s
+        GROUP BY a.name
+        HAVING opening_debit + opening_credit + debit + credit > 0.005
+        ORDER BY a.root_type, a.parent_account, a.name
+    """, params, as_dict=True)
+
+    rows = []
+    totals = {
+        "opening_debit": 0,
+        "opening_credit": 0,
+        "debit": 0,
+        "credit": 0,
+        "closing_debit": 0,
+        "closing_credit": 0,
+    }
+
+    for row in raw:
+        opening_net = flt(row.opening_debit) - flt(row.opening_credit)
+        opening_dr, opening_cr = _split_debit_credit(opening_net)
+        closing_net = opening_net + flt(row.debit) - flt(row.credit)
+        closing_dr, closing_cr = _split_debit_credit(closing_net)
+
+        entry = {
+            "account": row.account,
+            "account_name": row.account_name,
+            "root_type": row.root_type,
+            "parent_account": row.parent_account,
+            "opening_debit": opening_dr,
+            "opening_credit": opening_cr,
+            "debit": flt(row.debit),
+            "credit": flt(row.credit),
+            "closing_debit": closing_dr,
+            "closing_credit": closing_cr,
+        }
+        rows.append(entry)
+        for key in totals:
+            totals[key] += flt(entry[key])
+
+    difference = flt(totals["closing_debit"]) - flt(totals["closing_credit"])
+    summary = {
+        **totals,
+        "difference": difference,
+        "is_balanced": abs(difference) < 0.05,
+        "from_date": from_date,
+        "to_date": to_date,
+    }
+
+    if format == "csv":
+        cols = [
+            "account", "account_name", "root_type", "parent_account",
+            "opening_debit", "opening_credit", "debit", "credit",
+            "closing_debit", "closing_credit",
+        ]
+        _csv_response(cols, rows, "trial_balance.csv")
+        return
+
+    return {"summary": summary, "data": rows, "total": len(rows)}
+
+
+# ── 31. BALANCE SHEET ────────────────────────────────────────────
+@frappe.whitelist()
+def get_balance_sheet_report(company=None, as_on_date=None, format=None):
+    """Balance sheet — asset, liability, and equity balances as of a date."""
+    company = resolve_active_company(company)
+    as_on_date = getdate(as_on_date or nowdate())
+
+    params = {"company": company, "as_on_date": as_on_date}
+
+    raw = frappe.db.sql("""
+        SELECT a.name AS account,
+               COALESCE(a.account_name, a.name) AS account_name,
+               a.root_type,
+               a.account_type,
+               a.parent_account,
+               COALESCE(SUM(gle.debit - gle.credit), 0) AS balance
+        FROM `tabAccount` a
+        INNER JOIN `tabGL Entry` gle
+            ON gle.account = a.name
+           AND gle.company = %(company)s
+           AND gle.is_cancelled = 0
+           AND gle.posting_date <= %(as_on_date)s
+        WHERE a.company = %(company)s
+          AND a.root_type IN ('Asset', 'Liability', 'Equity')
+        GROUP BY a.name
+        HAVING ABS(balance) > 0.005
+        ORDER BY a.root_type, a.parent_account, a.name
+    """, params, as_dict=True)
+
+    rows = []
+    section_totals = {"Asset": 0, "Liability": 0, "Equity": 0}
+
+    for row in raw:
+        balance = flt(row.balance)
+        root = row.root_type
+        if root in ("Liability", "Equity"):
+            display_balance = -balance
+        else:
+            display_balance = balance
+        section_totals[root] = section_totals.get(root, 0) + display_balance
+        rows.append({
+            "account": row.account,
+            "account_name": row.account_name,
+            "root_type": root,
+            "account_type": row.account_type,
+            "parent_account": row.parent_account,
+            "balance": display_balance,
+        })
+
+    total_assets = flt(section_totals.get("Asset"))
+    total_liabilities = flt(section_totals.get("Liability"))
+    total_equity = flt(section_totals.get("Equity"))
+    accounting_equation_diff = total_assets - total_liabilities - total_equity
+
+    summary = {
+        "as_on_date": as_on_date,
+        "total_assets": total_assets,
+        "total_liabilities": total_liabilities,
+        "total_equity": total_equity,
+        "accounting_equation_diff": accounting_equation_diff,
+        "is_balanced": abs(accounting_equation_diff) < 0.05,
+    }
+
+    if format == "csv":
+        cols = ["account", "account_name", "root_type", "account_type", "parent_account", "balance"]
+        _csv_response(cols, rows, "balance_sheet.csv")
+        return
+
+    return {"summary": summary, "data": rows, "total": len(rows)}
+
+
+# ── 32. SERIAL TRACE ─────────────────────────────────────────────
+@frappe.whitelist()
+def get_serial_trace_report(company=None, serial_no=None, item_code=None,
+                            status=None, page=1, page_size=50, format=None):
+    """Serial numbers with purchase/delivery document links and current status."""
+    company = resolve_active_company(company)
+    page, page_size, offset = _paginate(page, page_size)
+
+    conditions = ["1=1"]
+    params = {}
+
+    if frappe.db.has_column("Serial No", "company"):
+        conditions.append("sn.company = %(company)s")
+        params["company"] = company
+
+    if serial_no:
+        conditions.append("sn.name LIKE %(serial_no)s")
+        params["serial_no"] = f"%{serial_no.strip()}%"
+    if item_code:
+        conditions.append("sn.item_code = %(item_code)s")
+        params["item_code"] = item_code.strip()
+    if status:
+        conditions.append("sn.status = %(status)s")
+        params["status"] = status.strip()
+
+    where = " AND ".join(conditions)
+
+    total = frappe.db.sql(f"""
+        SELECT COUNT(*) FROM `tabSerial No` sn WHERE {where}
+    """, params)[0][0]
+
+    select_cols = [
+        "sn.name AS serial_no",
+        "sn.item_code",
+        "i.item_name",
+        "sn.warehouse",
+        "sn.status",
+    ]
+    if frappe.db.has_column("Serial No", "purchase_document_type"):
+        select_cols.extend(["sn.purchase_document_type", "sn.purchase_document_no"])
+    if frappe.db.has_column("Serial No", "delivery_document_type"):
+        select_cols.extend(["sn.delivery_document_type", "sn.delivery_document_no"])
+
+    rows = frappe.db.sql(f"""
+        SELECT {", ".join(select_cols)}
+        FROM `tabSerial No` sn
+        LEFT JOIN `tabItem` i ON i.name = sn.item_code
+        WHERE {where}
+        ORDER BY sn.modified DESC
+        LIMIT %(page_size)s OFFSET %(offset)s
+    """, {**params, "page_size": page_size, "offset": offset}, as_dict=True)
+
+    status_counts = frappe.db.sql(f"""
+        SELECT sn.status, COUNT(*) AS count
+        FROM `tabSerial No` sn
+        WHERE {where}
+        GROUP BY sn.status
+        ORDER BY count DESC
+    """, params, as_dict=True)
+
+    summary = {
+        "total_serials": cint(total),
+        "by_status": {r.status or "Unknown": cint(r.count) for r in status_counts},
+    }
+
+    if format == "csv":
+        cols = list(rows[0].keys()) if rows else ["serial_no", "item_code", "status"]
+        _csv_response(cols, rows, "serial_trace.csv")
+        return
+
+    return {"summary": summary, "data": rows, "total": cint(total), "page": page, "page_size": page_size}
+
+
+# ── 33. FX GAIN / LOSS (UNREALIZED) ─────────────────────────────
+@frappe.whitelist()
+def get_fx_gain_loss_report(company=None, as_on_date=None, format=None):
+    """Unrealized FX exposure from open foreign-currency invoices."""
+    from trader_app.api.currency import _fetch_exchange_rate, get_company_currency_settings
+
+    company = resolve_active_company(company)
+    as_on_date = getdate(as_on_date or nowdate())
+    settings = get_company_currency_settings(company)
+    base = settings["base_currency"]
+
+    if not settings["multi_currency_enabled"]:
+        summary = {
+            "as_on_date": as_on_date,
+            "base_currency": base,
+            "multi_currency_enabled": False,
+            "total_unrealized_gain_loss": 0,
+            "receivable_gain_loss": 0,
+            "payable_gain_loss": 0,
+            "open_documents": 0,
+        }
+        if format == "csv":
+            _csv_response(
+                ["doctype", "name", "party", "currency"],
+                [],
+                "fx_gain_loss.csv",
+            )
+            return
+        return {"summary": summary, "data": [], "total": 0}
+
+    rows = []
+
+    si_rows = frappe.db.sql(
+        """
+        SELECT 'Sales Invoice' AS doctype,
+               si.name,
+               si.customer AS party,
+               si.posting_date,
+               si.currency,
+               si.conversion_rate AS book_rate,
+               si.outstanding_amount AS outstanding_fcy
+        FROM `tabSales Invoice` si
+        WHERE si.company = %(company)s
+          AND si.docstatus = 1
+          AND si.outstanding_amount > 0.005
+          AND si.currency != %(base)s
+        ORDER BY si.posting_date DESC, si.name DESC
+        """,
+        {"company": company, "base": base},
+        as_dict=True,
+    )
+
+    pi_rows = frappe.db.sql(
+        """
+        SELECT 'Purchase Invoice' AS doctype,
+               pi.name,
+               pi.supplier AS party,
+               pi.posting_date,
+               pi.currency,
+               pi.conversion_rate AS book_rate,
+               pi.outstanding_amount AS outstanding_fcy
+        FROM `tabPurchase Invoice` pi
+        WHERE pi.company = %(company)s
+          AND pi.docstatus = 1
+          AND pi.outstanding_amount > 0.005
+          AND pi.currency != %(base)s
+        ORDER BY pi.posting_date DESC, pi.name DESC
+        """,
+        {"company": company, "base": base},
+        as_dict=True,
+    )
+
+    receivable_gl = 0
+    payable_gl = 0
+
+    for row in si_rows + pi_rows:
+        currency = row.currency
+        fcy = flt(row.outstanding_fcy)
+        book_rate = flt(row.book_rate) or 1.0
+        for_selling = row.doctype == "Sales Invoice"
+        current_rate = _fetch_exchange_rate(
+            currency,
+            base,
+            as_on_date,
+            for_selling=for_selling,
+        )
+        book_base = fcy * book_rate
+        current_base = fcy * current_rate
+        if row.doctype == "Sales Invoice":
+            unrealized = current_base - book_base
+            receivable_gl += unrealized
+        else:
+            unrealized = book_base - current_base
+            payable_gl += unrealized
+
+        rows.append({
+            "doctype": row.doctype,
+            "name": row.name,
+            "party": row.party,
+            "posting_date": row.posting_date,
+            "currency": currency,
+            "outstanding_fcy": fcy,
+            "book_rate": book_rate,
+            "book_base": book_base,
+            "current_rate": current_rate,
+            "current_base": current_base,
+            "unrealized_gain_loss": unrealized,
+            "exposure_type": "Receivable" if row.doctype == "Sales Invoice" else "Payable",
+        })
+
+    total_gl = receivable_gl + payable_gl
+    summary = {
+        "as_on_date": as_on_date,
+        "base_currency": base,
+        "multi_currency_enabled": True,
+        "total_unrealized_gain_loss": total_gl,
+        "receivable_gain_loss": receivable_gl,
+        "payable_gain_loss": payable_gl,
+        "open_documents": len(rows),
+    }
+
+    if format == "csv":
+        cols = [
+            "doctype", "name", "party", "posting_date", "currency", "exposure_type",
+            "outstanding_fcy", "book_rate", "book_base", "current_rate", "current_base",
+            "unrealized_gain_loss",
+        ]
+        _csv_response(cols, rows, "fx_gain_loss.csv")
+        return
+
+    return {"summary": summary, "data": rows, "total": len(rows)}

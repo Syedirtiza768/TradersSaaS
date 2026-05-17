@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Save, Trash2 } from 'lucide-react';
-import { gstApi, inventoryApi, purchasesApi, suppliersApi } from '../lib/api';
+import BarcodeScanInput from '../components/BarcodeScanInput';
+import { currencyApi, gstApi, inventoryApi, purchasesApi, suppliersApi } from '../lib/api';
+import { useCompanyStore } from '../stores/companyStore';
+import { getPurchaseInvoiceTypeConfig, pickExemptTaxTemplate } from '../lib/invoiceTypes';
 import { appendPreservedListQuery, formatCurrency, isOperationsContext } from '../lib/utils';
 import SearchableSelect from '../components/SearchableSelect';
 import useQuickAdd from '../components/useQuickAdd';
@@ -11,9 +14,19 @@ type InvoiceLine = {
   item_code: string;
   qty: number;
   rate: number;
+  warehouse: string;
+  serial_no: string;
+  has_serial_no?: boolean;
+  serial_error?: string | null;
 };
 
-const EMPTY_LINE: InvoiceLine = { item_code: '', qty: 1, rate: 0 };
+const EMPTY_LINE: InvoiceLine = {
+  item_code: '',
+  qty: 1,
+  rate: 0,
+  warehouse: '',
+  serial_no: '',
+};
 
 function getLineIssues(line: { item_code: string; qty: number; rate: number }) {
   const issues: string[] = [];
@@ -39,6 +52,8 @@ export default function CreatePurchaseInvoicePage() {
   const [taxTemplate, setTaxTemplate] = useState('');
   const [taxRate, setTaxRate] = useState(0);
   const [taxInclusive, setTaxInclusive] = useState(false);
+  const invoiceTypeKey = searchParams.get('type') || 'tax_invoice';
+  const typeConfig = getPurchaseInvoiceTypeConfig(invoiceTypeKey);
   const sourceType = searchParams.get('sourceType');
   const sourceName = searchParams.get('sourceName');
   const listSearch = searchParams.get('list');
@@ -51,6 +66,14 @@ export default function CreatePurchaseInvoicePage() {
   const backLabel = listSearch && isOperationsContext(listSearch) ? 'Back to Operations' : 'Back to Purchases';
   const quickAdd = useQuickAdd();
   const quickAddItemLine = useRef<number>(-1);
+  const [scanValue, setScanValue] = useState('');
+  const [defaultWarehouse, setDefaultWarehouse] = useState('');
+  const baseCurrency = useCompanyStore((s) => s.currency) || 'PKR';
+  const [multiCurrencyOn, setMultiCurrencyOn] = useState(false);
+  const [currency, setCurrency] = useState(baseCurrency);
+  const [exchangeRate, setExchangeRate] = useState(1);
+  const [currencies, setCurrencies] = useState<{ name: string }[]>([]);
+  const companyRevision = useCompanyStore((s) => s.revision);
 
   useEffect(() => {
     const supplierParam = searchParams.get('supplier');
@@ -69,6 +92,8 @@ export default function CreatePurchaseInvoicePage() {
             item_code: line.item_code || '',
             qty: Number(line.qty) || 1,
             rate: Number(line.rate) || 0,
+            warehouse: line.warehouse || '',
+            serial_no: line.serial_no || '',
           })));
         }
       } catch (err) {
@@ -81,19 +106,43 @@ export default function CreatePurchaseInvoicePage() {
     const load = async () => {
       setLoading(true);
       try {
-        const [suppliersRes, itemsRes, taxRes] = await Promise.all([
+        const [suppliersRes, itemsRes, taxRes, warehousesRes, currencyRes] = await Promise.all([
           suppliersApi.getList({ page: 1, page_size: 100 }),
           inventoryApi.getItems({ page: 1, page_size: 100 }),
           gstApi.getTaxTemplates('Purchase'),
+          inventoryApi.getWarehouses(),
+          currencyApi.getOptions(),
         ]);
         setSuppliers(suppliersRes.data.message?.data || []);
         setItems(itemsRes.data.message?.data || []);
+        const warehouseRows = warehousesRes.data.message || [];
+        const mainWh = warehouseRows.find((w: any) => /main warehouse/i.test(w.warehouse_name || w.warehouse || ''))
+          || warehouseRows[0];
+        const wh = mainWh?.warehouse || '';
+        setDefaultWarehouse(wh);
+        setLines((current) => current.map((line) => ({ ...line, warehouse: line.warehouse || wh })));
+        const curMsg = currencyRes.data.message || {};
+        const multiOn = Boolean(curMsg.multi_currency_enabled);
+        setMultiCurrencyOn(multiOn);
+        setCurrencies(curMsg.currencies || []);
+        setCurrency(curMsg.base_currency || baseCurrency);
+        setExchangeRate(1);
         const templates = taxRes.data.message?.templates || taxRes.data.message || [];
         setTaxTemplates(templates);
-        const defaultTpl = templates.find((t: any) => t.is_default);
-        if (defaultTpl) {
-          setTaxTemplate(defaultTpl.name);
-          setTaxRate(parseFloat(defaultTpl.total_tax_rate || defaultTpl.tax_rate || 0));
+        if (typeConfig.noTaxByDefault) {
+          setTaxTemplate('');
+          setTaxRate(0);
+        } else if (typeConfig.useExemptTax) {
+          const exempt = pickExemptTaxTemplate(templates);
+          setTaxTemplate(exempt);
+          const tpl = templates.find((t: any) => t.name === exempt);
+          setTaxRate(tpl ? parseFloat(tpl.total_tax_rate || tpl.tax_rate || 0) : 0);
+        } else {
+          const defaultTpl = templates.find((t: any) => t.is_default);
+          if (defaultTpl) {
+            setTaxTemplate(defaultTpl.name);
+            setTaxRate(parseFloat(defaultTpl.total_tax_rate || defaultTpl.tax_rate || 0));
+          }
         }
       } catch (err) {
         console.error('Failed to load purchase form data:', err);
@@ -104,7 +153,23 @@ export default function CreatePurchaseInvoicePage() {
     };
 
     void load();
-  }, []);
+  }, [invoiceTypeKey, companyRevision, baseCurrency]);
+
+  useEffect(() => {
+    if (!multiCurrencyOn || !currency || currency === baseCurrency) {
+      setExchangeRate(1);
+      return;
+    }
+    const loadRate = async () => {
+      try {
+        const res = await currencyApi.getExchangeRate(currency, postingDate, 'buying');
+        setExchangeRate(Number(res.data.message?.exchange_rate) || 1);
+      } catch {
+        setExchangeRate(1);
+      }
+    };
+    void loadRate();
+  }, [currency, baseCurrency, postingDate, multiCurrencyOn]);
 
   const total = useMemo(
     () => lines.reduce((sum, line) => sum + (Number(line.qty) || 0) * (Number(line.rate) || 0), 0),
@@ -144,8 +209,62 @@ export default function CreatePurchaseInvoicePage() {
     const selected = items.find((item) => item.item_code === itemCode || item.name === itemCode);
     updateLine(index, {
       item_code: itemCode,
-      rate: selected?.last_purchase_rate ?? selected?.valuation_rate ?? selected?.standard_rate ?? 0,
+      rate: selected?.buying_price ?? selected?.last_purchase_rate ?? selected?.valuation_rate ?? selected?.standard_rate ?? 0,
+      has_serial_no: Boolean(selected?.has_serial_no),
+      serial_no: '',
+      serial_error: null,
     });
+  };
+
+  const handleBarcodeScan = async (barcode: string) => {
+    try {
+      const res = await inventoryApi.lookupByBarcode(barcode);
+      const msg = res.data.message;
+      if (!msg?.found || !msg.item) {
+        setError(msg?.message || `No item for barcode ${barcode}`);
+        return;
+      }
+      const item = msg.item;
+      setLines((prev) => [
+        ...prev,
+        {
+          item_code: item.item_code,
+          qty: 1,
+          rate: Number(item.buying_price) || 0,
+          warehouse: item.default_warehouse || defaultWarehouse,
+          serial_no: '',
+          has_serial_no: Boolean(item.has_serial_no),
+          serial_error: null,
+        },
+      ]);
+      setError(null);
+    } catch (err: any) {
+      setError(err?.response?.data?.exception || 'Barcode lookup failed.');
+    }
+  };
+
+  const validatePurchaseSerial = async (index: number) => {
+    const line = lines[index];
+    if (!line?.item_code || !line.serial_no?.trim()) {
+      updateLine(index, { serial_error: null });
+      return true;
+    }
+    try {
+      const res = await inventoryApi.validateSerialForPurchase({
+        item_code: line.item_code,
+        serial_no: line.serial_no.trim(),
+      });
+      const result = res.data.message;
+      if (!result?.valid) {
+        updateLine(index, { serial_error: result?.message || 'Invalid serial.' });
+        return false;
+      }
+      updateLine(index, { serial_error: null });
+      return true;
+    } catch {
+      updateLine(index, { serial_error: 'Could not validate serial.' });
+      return false;
+    }
   };
 
   const handleTaxTemplateChange = (templateName: string) => {
@@ -166,6 +285,30 @@ export default function CreatePurchaseInvoicePage() {
       return;
     }
 
+    const seenSerials = new Map<string, number>();
+    for (let i = 0; i < lines.length; i++) {
+      const serial = lines[i].serial_no?.trim();
+      if (serial) {
+        const prior = seenSerials.get(serial.toLowerCase());
+        if (prior !== undefined) {
+          setError(`Duplicate serial ${serial} on lines ${prior + 1} and ${i + 1}.`);
+          return;
+        }
+        seenSerials.set(serial.toLowerCase(), i);
+      }
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.item_code && line.serial_no?.trim()) {
+        const ok = await validatePurchaseSerial(i);
+        if (!ok) {
+          setError(line.serial_error || `Invalid serial on line ${i + 1}.`);
+          return;
+        }
+      }
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -173,9 +316,18 @@ export default function CreatePurchaseInvoicePage() {
         supplier,
         posting_date: postingDate,
         due_date: dueDate,
-        items: validLines,
+        items: validLines.map((l) => ({
+          item_code: l.item_code,
+          qty: l.qty,
+          rate: l.rate,
+          warehouse: l.warehouse || defaultWarehouse,
+          serial_no: l.serial_no?.trim() || undefined,
+        })),
         taxes_and_charges: taxTemplate || undefined,
         tax_inclusive: taxInclusive ? 1 : 0,
+        invoice_type: invoiceTypeKey,
+        currency: currency !== baseCurrency ? currency : undefined,
+        exchange_rate: currency !== baseCurrency ? exchangeRate : undefined,
       });
       const created = response.data.message;
       navigate(appendPreservedListQuery(`/purchases/${encodeURIComponent(created.name)}`, listSearch));
@@ -210,7 +362,7 @@ export default function CreatePurchaseInvoicePage() {
           <button onClick={() => navigate(backToPath)} className="mb-3 inline-flex items-center gap-2 text-sm text-brand-700 hover:text-brand-800">
             <ArrowLeft size={16} /> {backLabel}
           </button>
-          <h1 className="page-title">New Purchase Invoice</h1>
+          <h1 className="page-title">New {typeConfig.label}</h1>
           <p className="mt-1 text-gray-500">Create a draft purchase invoice using the existing ERPNext workflow.</p>
         </div>
         <button onClick={handleSubmit} disabled={saving || loading} className="btn-primary flex items-center gap-2 disabled:opacity-60">
@@ -253,17 +405,42 @@ export default function CreatePurchaseInvoicePage() {
             <Field label="Due Date">
               <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input-field" />
             </Field>
-            <Field label="Tax Template">
-              <SearchableSelect
-                value={taxTemplate}
-                onChange={handleTaxTemplateChange}
-                options={[
-                  { label: 'No Tax', value: '' },
-                  ...taxTemplates.map((t: any) => ({ label: `${t.title || t.name} (${parseFloat(t.total_tax_rate || t.tax_rate || 0)}%)`, value: t.name })),
-                ]}
-                placeholder="Select tax template"
-              />
-            </Field>
+            {multiCurrencyOn && (
+              <>
+                <Field label="Currency">
+                  <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="input-field text-sm">
+                    {currencies.map((c) => (
+                      <option key={c.name} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                </Field>
+                {currency !== baseCurrency && (
+                  <Field label={`FX rate (→ ${baseCurrency})`}>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.0001"
+                      value={exchangeRate}
+                      onChange={(e) => setExchangeRate(Number(e.target.value) || 1)}
+                      className="input-field text-sm"
+                    />
+                  </Field>
+                )}
+              </>
+            )}
+            {!typeConfig.hideTaxPicker && (
+              <Field label="Tax Template">
+                <SearchableSelect
+                  value={taxTemplate}
+                  onChange={handleTaxTemplateChange}
+                  options={[
+                    { label: 'No Tax', value: '' },
+                    ...taxTemplates.map((t: any) => ({ label: `${t.title || t.name} (${parseFloat(t.total_tax_rate || t.tax_rate || 0)}%)`, value: t.name })),
+                  ]}
+                  placeholder="Select tax template"
+                />
+              </Field>
+            )}
           </div>
 
           {taxTemplate && taxRate > 0 && (
@@ -292,6 +469,12 @@ export default function CreatePurchaseInvoicePage() {
           )}
 
           <div className="space-y-4">
+            <BarcodeScanInput
+              value={scanValue}
+              onChange={setScanValue}
+              onScan={handleBarcodeScan}
+              disabled={loading || saving}
+            />
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Invoice Items</h2>
               <button onClick={addLine} className="btn-secondary flex items-center gap-2">
@@ -320,6 +503,20 @@ export default function CreatePurchaseInvoicePage() {
                   <Field label="Rate">
                     <input type="number" min={0} step="0.01" value={line.rate} onChange={(e) => updateLine(index, { rate: Number(e.target.value) })} className={`input-field ${!(Number(line.rate) > 0) ? 'border-amber-300 focus:border-amber-500 focus:ring-amber-500' : ''}`} />
                   </Field>
+                  {line.has_serial_no && (
+                    <Field label="Serial">
+                      <input
+                        value={line.serial_no}
+                        onChange={(e) => updateLine(index, { serial_no: e.target.value, serial_error: null })}
+                        onBlur={() => void validatePurchaseSerial(index)}
+                        placeholder="Scan serial"
+                        className={`input-field font-mono text-sm ${line.serial_error ? 'border-red-300' : ''}`}
+                      />
+                      {line.serial_error && (
+                        <p className="mt-1 text-xs text-red-600">{line.serial_error}</p>
+                      )}
+                    </Field>
+                  )}
                   <div className="flex items-end">
                     <button onClick={() => removeLine(index)} disabled={lines.length === 1} className="rounded-lg border border-gray-200 p-3 text-gray-500 hover:text-red-600 disabled:opacity-40">
                       <Trash2 size={16} />

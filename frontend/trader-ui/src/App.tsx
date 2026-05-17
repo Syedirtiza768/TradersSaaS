@@ -18,6 +18,11 @@ const CreateSalesOrderPage = lazy(() => import('./pages/CreateSalesOrderPage'));
 const CreateQuotationPage = lazy(() => import('./pages/CreateQuotationPage'));
 const CreateSalesReturnPage = lazy(() => import('./pages/CreateSalesReturnPage'));
 const CreateSalesDispatchPage = lazy(() => import('./pages/CreateSalesDispatchPage'));
+const CreateSalesDocumentHubPage = lazy(() => import('./pages/CreateSalesDocumentHubPage'));
+const CreatePurchaseDocumentHubPage = lazy(() => import('./pages/CreatePurchaseDocumentHubPage'));
+const CreateDeliveryChallanPage = lazy(() => import('./pages/CreateDeliveryChallanPage'));
+const DeliveryChallansPage = lazy(() => import('./pages/DeliveryChallansPage'));
+const DeliveryChallanDetailPage = lazy(() => import('./pages/DeliveryChallanDetailPage'));
 const PurchasesPage = lazy(() => import('./pages/PurchasesPage'));
 const PurchaseInvoiceDetailPage = lazy(() => import('./pages/PurchaseInvoiceDetailPage'));
 const PurchaseOrdersPage = lazy(() => import('./pages/PurchaseOrdersPage'));
@@ -58,6 +63,8 @@ const DocumentPrintPage = lazy(() => import('./pages/DocumentPrintPage'));
 const GstSettingsPage = lazy(() => import('./pages/GstSettingsPage'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const AuditLogPage = lazy(() => import('./pages/AuditLogPage'));
+const PosCheckoutPage = lazy(() => import('./pages/PosCheckoutPage'));
 
 function PageLoader() {
   return (
@@ -101,7 +108,13 @@ export default function App() {
 
         {/* Sales */}
         <Route path="sales" element={<SalesPage />} />
+        <Route path="sales/pos" element={<PosCheckoutPage />} />
+        <Route path="sales/documents/new" element={<CreateSalesDocumentHubPage />} />
         <Route path="sales/new" element={<CreateSalesInvoicePage />} />
+        <Route path="sales/proforma/new" element={<CreateQuotationPage />} />
+        <Route path="sales/challans" element={<DeliveryChallansPage />} />
+        <Route path="sales/challans/new" element={<CreateDeliveryChallanPage />} />
+        <Route path="sales/challans/:challanId" element={<DeliveryChallanDetailPage />} />
         <Route path="sales/returns/new" element={<CreateSalesReturnPage />} />
         <Route path="sales/dispatches/new" element={<CreateSalesDispatchPage />} />
         <Route path="sales/orders" element={<SalesOrdersPage />} />
@@ -114,6 +127,7 @@ export default function App() {
 
         {/* Purchases */}
         <Route path="purchases" element={<PurchasesPage />} />
+        <Route path="purchases/documents/new" element={<CreatePurchaseDocumentHubPage />} />
         <Route path="purchases/new" element={<CreatePurchaseInvoicePage />} />
         <Route path="purchases/returns/new" element={<CreatePurchaseReturnPage />} />
         <Route path="purchases/receipts/new" element={<CreatePurchaseReceiptPage />} />
@@ -161,6 +175,7 @@ export default function App() {
         <Route path="operations" element={<OperationsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="settings/audit" element={<AuditLogPage />} />
         <Route path="settings/gst" element={<GstSettingsPage />} />
         <Route path="print" element={<DocumentPrintPage />} />
       </Route>

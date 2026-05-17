@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FileText, DollarSign, TrendingUp, AlertCircle, Search, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { salesApi } from '../lib/api';
 import { formatCurrency, formatDate, getStatusColor, formatCompact, debounce } from '../lib/utils';
+import { documentTypeBadge } from '../lib/invoiceTypes';
 
 const STATUS_TABS = ['All', 'Unpaid', 'Paid', 'Overdue', 'Draft'];
 
@@ -59,11 +60,8 @@ export default function SalesPage() {
           <p className="text-gray-500 mt-1 text-sm">Manage sales invoices and orders</p>
         </div>
         <div className="flex items-center gap-2 self-start">
-          <button onClick={() => navigate('/sales/returns/new')} className="btn-secondary flex items-center gap-2 text-sm">
-            New Return
-          </button>
-          <button onClick={() => navigate('/sales/new')} className="btn-primary flex items-center gap-2">
-            <Plus className="w-4 h-4" /> New Sales Invoice
+          <button onClick={() => navigate('/sales/documents/new')} className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" /> New Document
           </button>
         </div>
       </div>
@@ -109,6 +107,7 @@ export default function SalesPage() {
           <thead>
             <tr className="bg-gray-50">
               <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Invoice</th>
+              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Type</th>
               <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Customer</th>
               <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Date</th>
               <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Amount</th>
@@ -118,13 +117,14 @@ export default function SalesPage() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
-              <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400"><div className="spinner mx-auto" /></td></tr>
+              <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-400"><div className="spinner mx-auto" /></td></tr>
             ) : invoices.length === 0 ? (
-              <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400">No invoices found.</td></tr>
+              <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-400">No invoices found.</td></tr>
             ) : (
               invoices.map((inv) => (
                 <tr key={inv.name} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-3 text-sm font-medium text-brand-700">{inv.name}</td>
+                  <td className="px-6 py-3 text-sm text-gray-600">{documentTypeBadge(inv.trader_invoice_type, inv.is_return)}</td>
                   <td className="px-6 py-3 text-sm text-gray-700">{inv.customer_name || inv.customer}</td>
                   <td className="px-6 py-3 text-sm text-gray-500">{formatDate(inv.posting_date)}</td>
                   <td className="px-6 py-3 text-sm text-gray-900 text-right font-medium">{formatCurrency(inv.grand_total)}</td>

@@ -50,6 +50,14 @@ type PrintData = {
   terms: string;
   remarks: string;
   printed_on: string;
+  bank_payment?: {
+    account: string;
+    account_name: string;
+    bank: string;
+    iban: string;
+    branch_code: string;
+    account_no: string;
+  } | null;
 };
 
 type DocFormat = 'tax_invoice' | 'commercial_invoice' | 'proforma_invoice';
@@ -66,6 +74,8 @@ export default function DocumentPrintPage() {
   const [searchParams] = useSearchParams();
   const doctype = searchParams.get('doctype') || 'Sales Invoice';
   const docName = searchParams.get('name') || '';
+  const autoprint = searchParams.get('autoprint') === '1';
+  const returnTo = searchParams.get('return') || '';
 
   const [printData, setPrintData] = useState<PrintData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -115,11 +125,18 @@ export default function DocumentPrintPage() {
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
   };
 
-  const backPath = doctype === 'Quotation'
-    ? `/sales/quotations/${encodeURIComponent(docName)}`
-    : doctype === 'Sales Order'
-      ? `/sales/orders/${encodeURIComponent(docName)}`
-      : `/sales/${encodeURIComponent(docName)}`;
+  useEffect(() => {
+    if (!autoprint || loading || !printData) return;
+    const timer = window.setTimeout(() => handlePrint(), 400);
+    return () => window.clearTimeout(timer);
+  }, [autoprint, loading, printData]);
+
+  const backPath = returnTo
+    || (doctype === 'Quotation'
+      ? `/sales/quotations/${encodeURIComponent(docName)}`
+      : doctype === 'Sales Order'
+        ? `/sales/orders/${encodeURIComponent(docName)}`
+        : `/sales/${encodeURIComponent(docName)}`);
 
   if (loading) {
     return <div className="flex justify-center py-16"><div className="spinner" /></div>;
@@ -144,7 +161,7 @@ export default function DocumentPrintPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <button onClick={() => navigate(backPath)} className="mb-3 inline-flex items-center gap-2 text-sm text-brand-700 hover:text-brand-800">
-            <ArrowLeft size={16} /> Back to Document
+            <ArrowLeft size={16} /> {returnTo === '/sales/pos' ? 'Back to POS' : 'Back to Document'}
           </button>
           <h1 className="page-title">Print Preview</h1>
           <p className="mt-1 text-gray-500">{printData.doc_title} — {docName}</p>
@@ -301,6 +318,17 @@ export default function DocumentPrintPage() {
                 )}
               </div>
             </div>
+
+            {printData.bank_payment && (
+              <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: '12px 14px', marginBottom: 16, fontSize: 12, color: '#1e3a5f' }}>
+                <strong style={{ display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>Payment details</strong>
+                {printData.bank_payment.bank && <div><strong>Bank:</strong> {printData.bank_payment.bank}</div>}
+                <div><strong>Account:</strong> {printData.bank_payment.account_name}</div>
+                {printData.bank_payment.account_no && <div><strong>Account No:</strong> {printData.bank_payment.account_no}</div>}
+                {printData.bank_payment.iban && <div><strong>IBAN:</strong> {printData.bank_payment.iban}</div>}
+                {printData.bank_payment.branch_code && <div><strong>Branch:</strong> {printData.bank_payment.branch_code}</div>}
+              </div>
+            )}
 
             {/* Amount in Words */}
             {printData.in_words && (

@@ -267,6 +267,39 @@ export const REPORTS: ReportDef[] = [
     ],
   },
   {
+    id: 'serial-trace',
+    category: 'inventory',
+    title: 'Serial Trace',
+    description: 'Serial numbers with status, warehouse, and linked purchase/delivery documents',
+    fetch: (p) => reportsApi.getSerialTraceReport(p),
+    filters: [
+      { key: 'serial_no', label: 'Serial', type: 'text' },
+      { key: 'item_code', label: 'Item', type: 'text' },
+      { key: 'status', label: 'Status', type: 'text' },
+    ],
+    kpis: (m) => {
+      const s = m.summary || {};
+      const byStatus = s.by_status || {};
+      const entries = Object.entries(byStatus) as [string, number][];
+      const kpis: KpiItem[] = [
+        { label: 'Serials', value: s.total_serials, format: 'number' },
+      ];
+      for (const [status, count] of entries.slice(0, 4)) {
+        kpis.push({ label: status, value: count, format: 'number' });
+      }
+      return kpis;
+    },
+    columns: [
+      { key: 'serial_no', label: 'Serial', width: '160px' },
+      { key: 'item_code', label: 'Item' },
+      { key: 'item_name', label: 'Name', width: '180px' },
+      { key: 'warehouse', label: 'Warehouse' },
+      { key: 'status', label: 'Status' },
+      { key: 'purchase_document_no', label: 'Purchase Doc' },
+      { key: 'delivery_document_no', label: 'Delivery Doc' },
+    ],
+  },
+  {
     id: 'reorder',
     category: 'inventory',
     title: 'Reorder Report',
@@ -572,6 +605,44 @@ export const REPORTS: ReportDef[] = [
 
   // ──── FINANCE (phase 2) ─────────────────────────────────────────
   {
+    id: 'consolidated-company-summary',
+    category: 'finance',
+    title: 'Multi-Company Summary',
+    description: 'Sales, purchases, receivables, payables and stock value across all companies you can access',
+    fetch: (p) => reportsApi.getConsolidatedCompanySummary(p),
+    filters: [fromDateFilter, toDateFilter],
+    kpis: (m) => {
+      const s = m.summary || {};
+      return [
+        { label: 'Companies', value: s.company_count, format: 'number' },
+        { label: 'Total Sales', value: s.sales, format: 'currency', color: 'text-green-700' },
+        { label: 'Total Purchases', value: s.purchases, format: 'currency', color: 'text-orange-600' },
+        { label: 'Receivables', value: s.receivables, format: 'currency', color: 'text-blue-700' },
+        { label: 'Payables', value: s.payables, format: 'currency', color: 'text-red-600' },
+        { label: 'Stock Value', value: s.stock_value, format: 'currency' },
+      ];
+    },
+    chart: {
+      type: 'bar',
+      xKey: 'company',
+      bars: [
+        { dataKey: 'sales', name: 'Sales', color: '#2563eb' },
+        { dataKey: 'purchases', name: 'Purchases', color: '#ea580c' },
+      ],
+      title: 'Sales vs Purchases by Company',
+      dataPath: 'data',
+    },
+    columns: [
+      { key: 'company', label: 'Company', width: '180px' },
+      { key: 'currency', label: 'Currency', width: '80px' },
+      { key: 'sales', label: 'Sales', format: 'currency', align: 'right' },
+      { key: 'purchases', label: 'Purchases', format: 'currency', align: 'right' },
+      { key: 'receivables', label: 'Receivables', format: 'currency', align: 'right' },
+      { key: 'payables', label: 'Payables', format: 'currency', align: 'right' },
+      { key: 'stock_value', label: 'Stock Value', format: 'currency', align: 'right' },
+    ],
+  },
+  {
     id: 'profit-and-loss',
     category: 'finance',
     title: 'Profit & Loss',
@@ -623,6 +694,99 @@ export const REPORTS: ReportDef[] = [
       { key: 'net_flow', label: 'Net Flow', format: 'currency', align: 'right' },
       { key: 'transfers', label: 'Transfers', format: 'currency', align: 'right' },
       { key: 'entry_count', label: 'Entries', format: 'number', align: 'right' },
+    ],
+  },
+  {
+    id: 'trial-balance',
+    category: 'finance',
+    title: 'Trial Balance',
+    description: 'Opening, period debit/credit, and closing balances per GL account',
+    fetch: (p) => reportsApi.getTrialBalanceReport(p),
+    filters: [fromDateFilter, toDateFilter],
+    kpis: (m) => {
+      const s = m.summary || {};
+      return [
+        { label: 'Period Debit', value: s.debit, format: 'currency' },
+        { label: 'Period Credit', value: s.credit, format: 'currency' },
+        { label: 'Closing Debit', value: s.closing_debit, format: 'currency' },
+        { label: 'Closing Credit', value: s.closing_credit, format: 'currency' },
+        {
+          label: 'Difference',
+          value: s.difference,
+          format: 'currency',
+          color: s.is_balanced ? 'text-green-700' : 'text-red-600',
+        },
+      ];
+    },
+    columns: [
+      { key: 'account', label: 'Account', width: '140px' },
+      { key: 'account_name', label: 'Name', width: '180px' },
+      { key: 'root_type', label: 'Type' },
+      { key: 'opening_debit', label: 'Open Dr', format: 'currency', align: 'right' },
+      { key: 'opening_credit', label: 'Open Cr', format: 'currency', align: 'right' },
+      { key: 'debit', label: 'Debit', format: 'currency', align: 'right' },
+      { key: 'credit', label: 'Credit', format: 'currency', align: 'right' },
+      { key: 'closing_debit', label: 'Close Dr', format: 'currency', align: 'right' },
+      { key: 'closing_credit', label: 'Close Cr', format: 'currency', align: 'right' },
+    ],
+  },
+  {
+    id: 'fx-gain-loss',
+    category: 'finance',
+    title: 'FX Gain / Loss (Unrealized)',
+    description: 'Open foreign-currency receivables and payables revalued at current exchange rates',
+    fetch: (p) => reportsApi.getFxGainLossReport({ ...p, as_on_date: p.as_on_date || p.to_date }),
+    filters: [{ key: 'as_on_date', label: 'As on', type: 'date' }],
+    kpis: (m) => {
+      const s = m.summary || {};
+      return [
+        { label: 'Total unrealized', value: s.total_unrealized_gain_loss, format: 'currency', color: s.total_unrealized_gain_loss >= 0 ? 'text-green-700' : 'text-red-600' },
+        { label: 'Receivables', value: s.receivable_gain_loss, format: 'currency' },
+        { label: 'Payables', value: s.payable_gain_loss, format: 'currency' },
+        { label: 'Open docs', value: s.open_documents, format: 'number' },
+      ];
+    },
+    columns: [
+      { key: 'exposure_type', label: 'Type' },
+      { key: 'doctype', label: 'Document' },
+      { key: 'name', label: 'Name', width: '140px' },
+      { key: 'party', label: 'Party' },
+      { key: 'currency', label: 'CCY' },
+      { key: 'outstanding_fcy', label: 'Outstanding (FCY)', format: 'currency', align: 'right' },
+      { key: 'book_rate', label: 'Book rate', format: 'number', align: 'right' },
+      { key: 'current_rate', label: 'Current rate', format: 'number', align: 'right' },
+      { key: 'book_base', label: 'Book (base)', format: 'currency', align: 'right' },
+      { key: 'current_base', label: 'Current (base)', format: 'currency', align: 'right' },
+      { key: 'unrealized_gain_loss', label: 'Unrealized G/L', format: 'currency', align: 'right' },
+    ],
+  },
+  {
+    id: 'balance-sheet',
+    category: 'finance',
+    title: 'Balance Sheet',
+    description: 'Assets, liabilities, and equity as of a selected date',
+    fetch: (p) => reportsApi.getBalanceSheetReport({ ...p, as_on_date: p.as_on_date || p.to_date }),
+    filters: [{ key: 'as_on_date', label: 'As on', type: 'date' }],
+    kpis: (m) => {
+      const s = m.summary || {};
+      return [
+        { label: 'Total Assets', value: s.total_assets, format: 'currency', color: 'text-green-700' },
+        { label: 'Total Liabilities', value: s.total_liabilities, format: 'currency', color: 'text-orange-600' },
+        { label: 'Total Equity', value: s.total_equity, format: 'currency', color: 'text-blue-700' },
+        {
+          label: 'A − L − E',
+          value: s.accounting_equation_diff,
+          format: 'currency',
+          color: s.is_balanced ? 'text-green-700' : 'text-red-600',
+        },
+      ];
+    },
+    columns: [
+      { key: 'root_type', label: 'Section' },
+      { key: 'account', label: 'Account', width: '140px' },
+      { key: 'account_name', label: 'Name', width: '200px' },
+      { key: 'parent_account', label: 'Parent' },
+      { key: 'balance', label: 'Balance', format: 'currency', align: 'right' },
     ],
   },
   {

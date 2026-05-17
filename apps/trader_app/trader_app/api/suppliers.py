@@ -8,6 +8,7 @@ from __future__ import unicode_literals
 
 import frappe
 from frappe import _
+from trader_app.api.company import resolve_active_company
 from frappe.utils import nowdate, flt, cint
 
 
@@ -17,7 +18,7 @@ def get_suppliers(page=1, page_size=20, search=None, supplier_group=None):
     page = cint(page) or 1
     page_size = min(cint(page_size) or 20, 100)
     offset = (page - 1) * page_size
-    company = _default_company()
+    company = resolve_active_company()
 
     conditions = ["s.disabled = 0"]
     params = {}
@@ -66,7 +67,7 @@ def get_supplier_detail(name):
     """Supplier detail with payable summary."""
     doc = frappe.get_doc("Supplier", name)
     doc.check_permission("read")
-    company = _default_company()
+    company = resolve_active_company()
 
     outstanding = flt(frappe.db.sql("""
         SELECT COALESCE(SUM(outstanding_amount), 0) FROM `tabPurchase Invoice`
@@ -100,7 +101,7 @@ def get_supplier_groups():
 @frappe.whitelist()
 def get_supplier_transactions(supplier, company=None, page=1, page_size=20):
     """Recent transactions for a supplier."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page = cint(page) or 1
     page_size = min(cint(page_size) or 20, 100)
     offset = (page - 1) * page_size
@@ -183,15 +184,6 @@ def enable_supplier(name):
     doc.save(ignore_permissions=False)
     frappe.db.commit()
     return {"name": doc.name, "status": "Enabled"}
-
-
-def _default_company():
-    companies = frappe.get_all("Company", limit=1, pluck="name")
-    return (
-        frappe.defaults.get_user_default("Company")
-        or frappe.db.get_single_value("Global Defaults", "default_company")
-        or (companies[0] if companies else None)
-    )
 
 
 def _default_supplier_group():

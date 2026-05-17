@@ -17,21 +17,13 @@ import json
 
 import frappe
 from frappe import _
+from trader_app.api.company import resolve_active_company
 from frappe.utils import flt, cint, nowdate
 
 
 # ────────────────────────────────────────────────────────────────
 # 1.  ITEM BUNDLE CRUD
 # ────────────────────────────────────────────────────────────────
-
-def _default_company():
-    companies = frappe.get_all("Company", limit=1, pluck="name")
-    return (
-        frappe.defaults.get_user_default("Company")
-        or frappe.db.get_single_value("Global Defaults", "default_company")
-        or (companies[0] if companies else None)
-    )
-
 
 @frappe.whitelist()
 def get_item_bundles(search=None, page=1, page_size=50):

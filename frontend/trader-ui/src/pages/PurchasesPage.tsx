@@ -61,8 +61,8 @@ export default function PurchasesPage() {
           <button onClick={() => navigate('/purchases/returns/new')} className="btn-secondary flex items-center gap-2 text-sm">
             New Return
           </button>
-          <button onClick={() => navigate('/purchases/new')} className="btn-primary flex items-center gap-2">
-            <Plus className="w-4 h-4" /> New Purchase Invoice
+          <button onClick={() => navigate('/purchases/documents/new')} className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" /> New Document
           </button>
         </div>
       </div>

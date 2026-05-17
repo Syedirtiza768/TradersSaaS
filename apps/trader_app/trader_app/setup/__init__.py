@@ -7,6 +7,9 @@ from __future__ import unicode_literals
 def after_install():
     """Run after the app is installed on a site."""
     create_roles()
+    from trader_app.setup.custom_fields import ensure_custom_fields
+
+    ensure_custom_fields()
     print("✅ Trader App installed successfully.")
 
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BarChart3, LogOut, Bell, ChevronDown, User, Menu } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
+import CompanySwitcher from './CompanySwitcher';
 
 interface NavbarProps {
   onMenuToggle?: () => void;
@@ -36,6 +37,7 @@ export default function Navbar({ onMenuToggle }: NavbarProps) {
 
       {/* Right */}
       <div className="flex items-center gap-2 sm:gap-4">
+        <CompanySwitcher />
         {/* Notifications placeholder */}
         <button className="relative p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors" aria-label="Notifications">
           <Bell className="w-5 h-5" />

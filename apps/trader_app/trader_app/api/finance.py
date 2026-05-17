@@ -11,6 +11,7 @@ from __future__ import unicode_literals
 
 import frappe
 from frappe import _
+from trader_app.api.company import resolve_active_company
 from frappe.utils import nowdate, flt, cint
 
 
@@ -23,7 +24,7 @@ def get_payment_entries(company=None, party_type=None, party=None,
                         payment_type=None, from_date=None, to_date=None,
                         page=1, page_size=20, search=None):
     """Paginated Payment Entries."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page = cint(page) or 1
     page_size = min(cint(page_size) or 20, 100)
     offset = (page - 1) * page_size
@@ -82,7 +83,7 @@ def get_payment_entry_detail(name):
 @frappe.whitelist()
 def get_payment_entry_setup(company=None):
     """Lookup payment modes, settlement accounts, and defaults for the form."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
 
     _ensure_company_bank_accounts(company)
     _ensure_payment_modes(company)
@@ -128,7 +129,7 @@ def create_payment_entry(payment_type, party_type, party, amount,
                          mode_of_payment=None, paid_to=None, paid_from=None,
                          reference_no=None, reference_date=None):
     """Create a Payment Entry from the UI."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     mode_of_payment = _resolve_payment_mode(mode_of_payment)
     party = _resolve_party(party_type, party)
 
@@ -269,7 +270,7 @@ def submit_payment_entry(name):
 def get_journal_entries(company=None, from_date=None, to_date=None,
                         page=1, page_size=20):
     """Paginated Journal Entries."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page = cint(page) or 1
     page_size = min(cint(page_size) or 20, 100)
     offset = (page - 1) * page_size
@@ -314,7 +315,7 @@ def get_journal_entry_detail(name):
 @frappe.whitelist()
 def get_accounts(company=None, search=None, limit=100):
     """Lookup selectable ledger accounts for finance forms."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     limit = min(cint(limit) or 100, 200)
 
     conditions = ["company = %(company)s", "is_group = 0", "disabled = 0"]
@@ -345,7 +346,7 @@ def create_journal_entry(voucher_type=None, posting_date=None,
     if isinstance(accounts, str):
         accounts = json.loads(accounts)
 
-    company = company or _default_company()
+    company = resolve_active_company(company)
     accounts = accounts or []
 
     if len(accounts) < 2:
@@ -442,7 +443,7 @@ def on_payment_entry_submit(doc, method):
 @frappe.whitelist()
 def get_outstanding_summary(company=None):
     """Receivable + Payable totals."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
 
     receivable = flt(frappe.db.sql("""
         SELECT COALESCE(SUM(outstanding_amount), 0) FROM `tabSales Invoice`
@@ -464,15 +465,6 @@ def get_outstanding_summary(company=None):
 # ────────────────────────────────────────────────────────────────
 #    HELPERS
 # ────────────────────────────────────────────────────────────────
-
-def _default_company():
-    companies = frappe.get_all("Company", limit=1, pluck="name")
-    return (
-        frappe.defaults.get_user_default("Company")
-        or frappe.db.get_single_value("Global Defaults", "default_company")
-        or (companies[0] if companies else None)
-    )
-
 
 def _get_default_account(company, account_type):
     """Get default cash or bank account for the company."""

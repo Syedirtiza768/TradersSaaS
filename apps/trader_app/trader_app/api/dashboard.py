@@ -12,6 +12,7 @@ import json
 
 import frappe
 from frappe import _
+from trader_app.api.company import resolve_active_company
 from frappe.utils import nowdate, getdate, add_months, flt, cint, now_datetime, add_days
 
 # Redis-backed cache TTL for headline KPIs (scheduler refresh_dashboard_cache repopulates).
@@ -24,7 +25,7 @@ def _dashboard_kpi_cache_key(company):
 
 def _compute_dashboard_kpis(company):
     """Run heavy SQL for one company — no read-through cache (used by get_kpis + scheduler)."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     currency = frappe.get_cached_value("Company", company, "default_currency") or "PKR"
     today = nowdate()
     first_of_month = getdate(today).replace(day=1).isoformat()
@@ -171,7 +172,7 @@ def get_kpis(company=None):
         currency
     """
     try:
-        company = company or _default_company()
+        company = resolve_active_company(company)
         cache_key = _dashboard_kpi_cache_key(company)
         cached = frappe.cache().get_value(cache_key)
         if cached:
@@ -198,7 +199,7 @@ def get_kpis(company=None):
 def get_sales_trend(company=None, months=12):
     """Monthly revenue for the last *months* months."""
     try:
-        company = company or _default_company()
+        company = resolve_active_company(company)
         months = cint(months) or 12
         start = add_months(nowdate(), -months)
 
@@ -225,7 +226,7 @@ def get_sales_trend(company=None, months=12):
 def get_top_customers(company=None, limit=8):
     """Top N customers by total revenue this fiscal year."""
     try:
-        company = company or _default_company()
+        company = resolve_active_company(company)
         limit = cint(limit) or 8
 
         fy = _current_fiscal_year(company)
@@ -255,7 +256,7 @@ def get_top_customers(company=None, limit=8):
 def get_recent_orders(company=None, limit=10):
     """Most recent Sales Invoices."""
     try:
-        company = company or _default_company()
+        company = resolve_active_company(company)
         limit = cint(limit) or 10
 
         rows = frappe.db.sql("""
@@ -288,7 +289,7 @@ def get_recent_orders(company=None, limit=10):
 @frappe.whitelist()
 def get_cash_flow_summary(company=None, months=12):
     """Monthly inflow / outflow for the Finance page."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     months = cint(months) or 12
     start = add_months(nowdate(), -months)
 
@@ -330,7 +331,7 @@ def get_cash_flow_summary(company=None, months=12):
 @frappe.whitelist()
 def get_inventory_summary(company=None):
     """Summary widget for the dashboard — stock distribution by warehouse."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
 
     rows = frappe.db.sql("""
         SELECT w.name AS warehouse,
@@ -368,16 +369,6 @@ def refresh_dashboard_cache():
 # ────────────────────────────────────────────────────────────────
 #    HELPERS
 # ────────────────────────────────────────────────────────────────
-
-def _default_company():
-    """Return the first active company."""
-    companies = frappe.get_all("Company", limit=1, pluck="name")
-    return (
-        frappe.defaults.get_user_default("Company")
-        or frappe.db.get_single_value("Global Defaults", "default_company")
-        or (companies[0] if companies else None)
-    )
-
 
 def _current_fiscal_year(company):
     """Return dict with 'from' and 'to' for the current fiscal year."""

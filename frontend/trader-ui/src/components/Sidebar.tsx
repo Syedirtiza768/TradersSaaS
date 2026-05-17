@@ -25,6 +25,7 @@ import {
   FilePlus2,
   ShoppingBag,
   ScrollText,
+  ScanLine,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { hasCapability, type AppCapability } from '../lib/permissions';
@@ -49,6 +50,8 @@ const navItems: NavItem[] = [
     to: '/sales', label: 'Sales', icon: TrendingUp, capability: 'sales:view',
     children: [
       { to: '/sales', label: 'Invoices' },
+      { to: '/sales/pos', label: 'POS Checkout' },
+      { to: '/sales/challans', label: 'Delivery Challans' },
       { to: '/sales/orders', label: 'Sales Orders' },
       { to: '/sales/quotations', label: 'Quotations' },
     ],

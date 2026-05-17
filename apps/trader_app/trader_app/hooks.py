@@ -104,11 +104,21 @@ scheduler_events = {
 permission_query_conditions = {
     "Sales Invoice": "trader_app.api.permissions.sales_invoice_query",
     "Purchase Invoice": "trader_app.api.permissions.purchase_invoice_query",
+    "Sales Order": "trader_app.api.permissions.sales_order_query",
+    "Purchase Order": "trader_app.api.permissions.purchase_order_query",
+    "Payment Entry": "trader_app.api.permissions.payment_entry_query",
+    "Delivery Note": "trader_app.api.permissions.delivery_note_query",
+    "Quotation": "trader_app.api.permissions.quotation_query",
 }
 
 has_permission = {
     "Sales Invoice": "trader_app.api.permissions.has_sales_invoice_permission",
     "Purchase Invoice": "trader_app.api.permissions.has_purchase_invoice_permission",
+    "Sales Order": "trader_app.api.permissions.has_sales_order_permission",
+    "Purchase Order": "trader_app.api.permissions.has_purchase_order_permission",
+    "Payment Entry": "trader_app.api.permissions.has_payment_entry_permission",
+    "Delivery Note": "trader_app.api.permissions.has_delivery_note_permission",
+    "Quotation": "trader_app.api.permissions.has_quotation_permission",
 }
 
 # ── Boot Session ───────────────────────────────────────────────────

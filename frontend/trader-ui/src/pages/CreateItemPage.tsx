@@ -13,6 +13,8 @@ export default function CreateItemPage() {
     item_group: '',
     stock_uom: 'Nos',
     is_stock_item: 1,
+    has_serial_no: 0,
+    barcode: '',
     opening_stock: 0,
     standard_rate: 0,
     description: '',
@@ -112,6 +114,22 @@ export default function CreateItemPage() {
             onChange={(v) => setForm((c) => ({ ...c, is_stock_item: Number(v) }))}
             options={[{ label: 'Yes', value: '1' }, { label: 'No', value: '0' }]}
             placeholder="Select"
+          />
+        </Field>
+        <Field label="Track serial numbers">
+          <SearchableSelect
+            value={String(form.has_serial_no)}
+            onChange={(v) => setForm((c) => ({ ...c, has_serial_no: Number(v) }))}
+            options={[{ label: 'Yes', value: '1' }, { label: 'No', value: '0' }]}
+            placeholder="Select"
+          />
+        </Field>
+        <Field label="Barcode (EAN)">
+          <input
+            value={form.barcode}
+            onChange={(e) => setForm((c) => ({ ...c, barcode: e.target.value }))}
+            className="input-field font-mono"
+            placeholder="Scan or enter barcode"
           />
         </Field>
       </div>

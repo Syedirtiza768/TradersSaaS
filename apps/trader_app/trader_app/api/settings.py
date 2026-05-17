@@ -8,14 +8,7 @@ import json
 import frappe
 from frappe.utils import cint
 
-
-def _default_company():
-    companies = frappe.get_all("Company", limit=1, pluck="name")
-    return (
-        frappe.defaults.get_user_default("Company")
-        or frappe.db.get_single_value("Global Defaults", "default_company")
-        or (companies[0] if companies else None)
-    )
+from trader_app.api.company import resolve_active_company
 
 
 def _cache_key():
@@ -53,7 +46,7 @@ def _read_user_ui_settings():
 
 
 def _payload():
-    company_name = _default_company()
+    company_name = resolve_active_company()
     company_doc = frappe.get_doc("Company", company_name)
     ui_settings = _read_user_ui_settings()
 

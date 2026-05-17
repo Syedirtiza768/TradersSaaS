@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Save, Trash2 } from 'lucide-react';
 import { customersApi, gstApi, inventoryApi, salesApi } from '../lib/api';
 import { appendPreservedListQuery, formatCurrency } from '../lib/utils';
@@ -18,7 +18,9 @@ const EMPTY_LINE: QuotationLine = { item_code: '', description: '', qty: 1, rate
 
 export default function CreateQuotationPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
+  const isProforma = location.pathname.includes('/proforma/') || searchParams.get('type') === 'proforma_invoice';
   const [customers, setCustomers] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
   const [customer, setCustomer] = useState('');
@@ -131,6 +133,7 @@ export default function CreateQuotationPage() {
         items: validLines.map((l) => ({ item_code: l.item_code, description: l.description || undefined, qty: l.qty, rate: l.rate })),
         taxes_and_charges: taxTemplate || undefined,
         tax_inclusive: taxInclusive ? 1 : 0,
+        invoice_type: isProforma ? 'proforma_invoice' : 'quotation',
       });
       const created = response.data.message;
       navigate(appendPreservedListQuery(`/sales/quotations/${encodeURIComponent(created.name)}`, listSearch));
@@ -149,8 +152,10 @@ export default function CreateQuotationPage() {
           <button onClick={() => navigate('/sales/quotations')} className="mb-3 inline-flex items-center gap-2 text-sm text-brand-700 hover:text-brand-800">
             <ArrowLeft size={16} /> Back to Quotations
           </button>
-          <h1 className="page-title">New Quotation</h1>
-          <p className="mt-1 text-gray-500">Create a draft quotation for a customer.</p>
+          <h1 className="page-title">{isProforma ? 'New Proforma Invoice' : 'New Quotation'}</h1>
+          <p className="mt-1 text-gray-500">
+            {isProforma ? 'Create a non-binding proforma before issuing a tax invoice.' : 'Create a draft quotation for a customer.'}
+          </p>
         </div>
         <button onClick={handleSubmit} disabled={saving || loading || !isReadyToSave} className="btn-primary flex items-center gap-2 disabled:opacity-60">
           <Save size={14} /> {saving ? 'Creating…' : 'Create Draft'}

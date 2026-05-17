@@ -20,16 +20,8 @@ import json
 
 import frappe
 from frappe import _
+from trader_app.api.company import resolve_active_company
 from frappe.utils import flt, cint
-
-
-def _default_company():
-    companies = frappe.get_all("Company", limit=1, pluck="name")
-    return (
-        frappe.defaults.get_user_default("Company")
-        or frappe.db.get_single_value("Global Defaults", "default_company")
-        or (companies[0] if companies else None)
-    )
 
 
 # ────────────────────────────────────────────────────────────────
@@ -71,7 +63,7 @@ PUNJAB_GST_TEMPLATES = [
 @frappe.whitelist()
 def get_gst_settings(company=None):
     """Return the GST tax templates and configuration for the company."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     if not company:
         return {"templates": [], "company": None}
 
@@ -171,7 +163,7 @@ def save_gst_settings(company=None, config=None):
         for r in ('System Manager', 'Trader Admin', 'Trader Accountant', 'Trader Finance Manager')
     ):
         frappe.throw(_('Not permitted'), frappe.PermissionError)
-    company = company or _default_company()
+    company = resolve_active_company(company)
     if isinstance(config, str):
         config = json.loads(config)
     config = config or {}
@@ -205,7 +197,7 @@ def seed_punjab_gst_templates(company=None):
         for r in ('System Manager', 'Trader Admin', 'Trader Accountant', 'Trader Finance Manager')
     ):
         frappe.throw(_('Not permitted'), frappe.PermissionError)
-    company = company or _default_company()
+    company = resolve_active_company(company)
     if not company:
         frappe.throw(_("No company found — create a company first"))
 
@@ -321,7 +313,7 @@ def get_tax_templates(doctype="Sales", company=None):
     Each template includes its total_tax_rate (sum of charge rows)
     so the frontend can preview tax amounts before saving.
     """
-    company = company or _default_company()
+    company = resolve_active_company(company)
 
     if doctype == "Purchase":
         template_dt = "Purchase Taxes and Charges Template"

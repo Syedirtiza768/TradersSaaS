@@ -21,14 +21,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt, cint, nowdate, getdate, fmt_money
 
-
-def _default_company():
-    companies = frappe.get_all("Company", limit=1, pluck="name")
-    return (
-        frappe.defaults.get_user_default("Company")
-        or frappe.db.get_single_value("Global Defaults", "default_company")
-        or (companies[0] if companies else None)
-    )
+from trader_app.api.company import assert_document_company_access, resolve_active_company
+from trader_app.api.invoice_types import print_format_for_doc, print_title_for_format
 
 
 # ────────────────────────────────────────────────────────────────
@@ -46,13 +40,17 @@ def get_print_data(doctype, name, view_mode="external", doc_format="tax_invoice"
     view_mode : str   — "external" or "internal"
     doc_format : str  — "tax_invoice", "commercial_invoice", or "proforma_invoice"
     """
-    if doctype not in ("Quotation", "Sales Order", "Sales Invoice"):
+    if doctype not in ("Quotation", "Sales Order", "Sales Invoice", "Delivery Note", "Purchase Invoice"):
         frappe.throw(_("Unsupported document type: {0}").format(doctype))
 
     doc = frappe.get_doc(doctype, name)
     doc.check_permission("read")
+    assert_document_company_access(doc.company)
 
-    company = doc.company or _default_company()
+    if not doc_format or doc_format == "auto":
+        doc_format = print_format_for_doc(doc)
+
+    company = doc.company or resolve_active_company()
     company_doc = frappe.get_doc("Company", company)
 
     # Build structured items — applying view mode filtering
@@ -88,6 +86,8 @@ def get_print_data(doctype, name, view_mode="external", doc_format="tax_invoice"
     # Build the document title based on format
     doc_title = _get_document_title(doctype, doc_format, doc.name)
 
+    bank_payment = _get_bank_payment_info(doc, doctype)
+
     return {
         "doc_title": doc_title,
         "doc_format": doc_format,
@@ -112,6 +112,7 @@ def get_print_data(doctype, name, view_mode="external", doc_format="tax_invoice"
         "terms": getattr(doc, "terms", "") or "",
         "remarks": getattr(doc, "remarks", "") or "",
         "printed_on": nowdate(),
+        "bank_payment": bank_payment,
     }
 
 
@@ -174,16 +175,22 @@ def _get_party_info(doc, doctype):
     if doctype == "Quotation":
         party_name = doc.party_name or ""
         party_display = doc.customer_name or party_name
+        link_doctype = "Customer"
+    elif doctype == "Purchase Invoice":
+        party_name = doc.supplier or ""
+        party_display = doc.supplier_name or party_name
+        link_doctype = "Supplier"
     else:
         party_name = doc.customer or ""
         party_display = doc.customer_name or party_name
+        link_doctype = "Customer"
 
     address = ""
     if party_name:
         # Get primary address
         addr = frappe.db.get_value(
             "Dynamic Link",
-            {"link_doctype": "Customer", "link_name": party_name, "parenttype": "Address"},
+            {"link_doctype": link_doctype, "link_name": party_name, "parenttype": "Address"},
             "parent",
         )
         if addr:
@@ -203,6 +210,43 @@ def _get_party_info(doc, doctype):
         "address": address,
         "tax_id": "",
     }
+
+
+def _get_bank_payment_info(doc, doctype):
+    """Preferred bank account for customer remittance (Sales Invoice)."""
+    if doctype != "Sales Invoice":
+        return None
+    account = getattr(doc, "preferred_bank_account", None) or ""
+    if not account or not frappe.db.exists("Account", account):
+        return None
+
+    account_name = frappe.get_cached_value("Account", account, "account_name") or account
+    info = {
+        "account": account,
+        "account_name": account_name,
+        "bank": "",
+        "iban": "",
+        "branch_code": "",
+        "account_no": "",
+    }
+
+    if frappe.db.has_column("Account", "account_number"):
+        info["account_no"] = frappe.get_cached_value("Account", account, "account_number") or ""
+
+    if frappe.db.exists("DocType", "Bank Account"):
+        bank_row = frappe.db.get_value(
+            "Bank Account",
+            {"account": account, "is_company_account": 1},
+            ["bank", "bank_account_no", "iban", "branch_code"],
+            as_dict=True,
+        )
+        if bank_row:
+            info["bank"] = bank_row.get("bank") or ""
+            info["account_no"] = info["account_no"] or bank_row.get("bank_account_no") or ""
+            info["iban"] = bank_row.get("iban") or ""
+            info["branch_code"] = bank_row.get("branch_code") or ""
+
+    return info
 
 
 def _get_company_address(company):
@@ -227,16 +271,16 @@ def _get_company_address(company):
 
 def _get_document_title(doctype, doc_format, doc_name):
     """Return the appropriate document title based on format."""
-    titles = {
-        "tax_invoice": "TAX INVOICE",
-        "commercial_invoice": "COMMERCIAL INVOICE",
-        "proforma_invoice": "PROFORMA INVOICE",
-    }
+    title = print_title_for_format(doc_format, doctype)
+    if title:
+        return title
     if doctype == "Quotation":
         return "QUOTATION"
     if doctype == "Sales Order":
         return "SALES ORDER"
-    return titles.get(doc_format, "INVOICE")
+    if doctype == "Delivery Note":
+        return "DELIVERY CHALLAN"
+    return "INVOICE"
 
 
 def _get_doc_status(doc):

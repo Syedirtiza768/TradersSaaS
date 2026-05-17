@@ -15,18 +15,38 @@ import frappe
 from frappe import _
 from frappe.utils import nowdate, getdate, flt, cint
 
+from trader_app.api.company import assert_document_company_access, resolve_active_company
+
+from trader_app.api.invoice_types import (
+    get_document_catalog,
+    normalize_type_key,
+    resolve_sales_taxes,
+    set_trader_invoice_type,
+    print_format_for_doc,
+)
+
 
 # ────────────────────────────────────────────────────────────────
 # 1.  LIST ENDPOINTS
 # ────────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
+def get_sales_document_catalog():
+    """Return sales-side document types the UI can create."""
+    from trader_app.setup.custom_fields import ensure_custom_fields
+
+    ensure_custom_fields()
+    return {"documents": get_document_catalog("sales")}
+
+
+@frappe.whitelist()
 def get_sales_invoices(company=None, customer=None, status=None,
                        from_date=None, to_date=None,
+                       invoice_type=None,
                        page=1, page_size=20, search=None):
     """Paginated list of Sales Invoices with optional filters."""
     try:
-        company = company or _default_company()
+        company = resolve_active_company(company)
         page = cint(page) or 1
         page_size = min(cint(page_size) or 20, 100)
         offset = (page - 1) * page_size
@@ -58,7 +78,21 @@ def get_sales_invoices(company=None, customer=None, status=None,
             conditions.append("(si.name LIKE %(search)s OR si.customer LIKE %(search)s)")
             params["search"] = f"%{search}%"
 
+        if invoice_type and frappe.db.has_column("Sales Invoice", "trader_invoice_type"):
+            if invoice_type == "credit_note":
+                conditions.append("si.is_return = 1")
+            else:
+                label = normalize_type_key(invoice_type, is_return=0)
+                conditions.append("si.trader_invoice_type = %(invoice_type_label)s")
+                params["invoice_type_label"] = label
+
         where = " AND ".join(conditions)
+
+        type_select = (
+            ", si.trader_invoice_type"
+            if frappe.db.has_column("Sales Invoice", "trader_invoice_type")
+            else ", NULL AS trader_invoice_type"
+        )
 
         total = frappe.db.sql(
             f"SELECT COUNT(*) FROM `tabSales Invoice` si WHERE {where}",
@@ -69,7 +103,8 @@ def get_sales_invoices(company=None, customer=None, status=None,
             SELECT si.name, si.customer, si.customer_name, si.posting_date,
                    si.due_date, si.grand_total, si.outstanding_amount,
                    si.currency, si.docstatus,
-                   si.is_return, si.return_against,
+                   si.is_return, si.return_against
+                   {type_select},
                    CASE
                        WHEN si.docstatus = 0 THEN 'Draft'
                        WHEN si.docstatus = 2 THEN 'Cancelled'
@@ -100,6 +135,7 @@ def get_sales_invoice_detail(name):
     """Full Sales Invoice with items."""
     doc = frappe.get_doc("Sales Invoice", name)
     doc.check_permission("read")
+    assert_document_company_access(doc.company)
     return doc.as_dict()
 
 
@@ -109,7 +145,7 @@ def get_sales_orders(company=None, customer=None, status=None,
                      page=1, page_size=20, search=None):
     """Paginated list of Sales Orders."""
     try:
-        company = company or _default_company()
+        company = resolve_active_company(company)
         page = cint(page) or 1
         page_size = min(cint(page_size) or 20, 100)
         offset = (page - 1) * page_size
@@ -182,6 +218,7 @@ def get_sales_order_detail(name):
     """Full Sales Order with items."""
     doc = frappe.get_doc("Sales Order", name)
     doc.check_permission("read")
+    assert_document_company_access(doc.company)
     data = doc.as_dict()
     # ERPNext v15: tabSales Invoice has no 'sales_order' header field.
     # Link is through tabSales Invoice Item.sales_order.
@@ -202,7 +239,7 @@ def get_quotations(company=None, customer=None, status=None,
                    page=1, page_size=20, search=None):
     """Paginated list of Quotations."""
     try:
-        company = company or _default_company()
+        company = resolve_active_company(company)
         page = cint(page) or 1
         page_size = min(cint(page_size) or 20, 100)
         offset = (page - 1) * page_size
@@ -272,6 +309,7 @@ def get_quotation_detail(name):
     """Full Quotation with items."""
     doc = frappe.get_doc("Quotation", name)
     doc.check_permission("read")
+    assert_document_company_access(doc.company)
     data = doc.as_dict()
     # ERPNext v15: tabSales Order has no 'quotation' header field.
     # Link is through tabSales Order Item.prevdoc_docname.
@@ -291,11 +329,51 @@ def get_quotation_detail(name):
 # ────────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
+def get_customer_item_sales_history(customer, item_code, company=None, limit=5):
+    """Last N submitted sale lines for the same customer and item (invoice-time pricing history)."""
+    if not customer or not item_code:
+        return {"data": []}
+
+    company = resolve_active_company(company)
+    limit = min(cint(limit) or 5, 20)
+
+    rows = frappe.db.sql("""
+        SELECT si.name AS invoice,
+               si.posting_date,
+               sii.item_code,
+               sii.item_name,
+               sii.qty,
+               sii.rate,
+               sii.discount_percentage,
+               sii.discount_amount,
+               sii.amount AS line_amount
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE si.customer = %(customer)s
+          AND sii.item_code = %(item_code)s
+          AND si.company = %(company)s
+          AND si.docstatus = 1
+          AND IFNULL(si.is_return, 0) = 0
+        ORDER BY si.posting_date DESC, si.creation DESC, sii.idx DESC
+        LIMIT %(limit)s
+    """, {
+        "customer": customer,
+        "item_code": item_code,
+        "company": company,
+        "limit": limit,
+    }, as_dict=True)
+
+    return {"data": rows}
+
+
+@frappe.whitelist()
 def create_sales_invoice(customer, items, company=None, posting_date=None,
                          due_date=None, taxes_and_charges=None,
                          tax_inclusive=0,
                          is_return=0, return_against=None,
-                         update_stock=0):
+                         update_stock=0, invoice_type=None,
+                         preferred_bank_account=None,
+                         currency=None, exchange_rate=None):
     """Create a Sales Invoice from the UI.
 
     Parameters
@@ -310,29 +388,63 @@ def create_sales_invoice(customer, items, company=None, posting_date=None,
     if isinstance(items, str):
         items = json.loads(items)
 
-    company = company or _default_company()
+    company = resolve_active_company(company)
     abbr = frappe.get_cached_value("Company", company, "abbr")
+    default_warehouse = f"Main Warehouse - {abbr}"
+
+    from trader_app.setup.custom_fields import ensure_custom_fields
+    ensure_custom_fields()
 
     si = frappe.new_doc("Sales Invoice")
     si.company = company
     si.customer = customer
     si.posting_date = posting_date or nowdate()
     si.due_date = due_date or si.posting_date
-    si.set_warehouse = f"Main Warehouse - {abbr}"
+    si.set_warehouse = default_warehouse
     si.update_stock = cint(update_stock)
+
+    from trader_app.api.currency import apply_document_currency
+    apply_document_currency(
+        si,
+        currency=currency,
+        exchange_rate=exchange_rate,
+        posting_date=si.posting_date,
+        for_selling=True,
+    )
     si.is_return = cint(is_return)
     if return_against:
         si.return_against = return_against
+    if preferred_bank_account and frappe.db.has_column("Sales Invoice", "preferred_bank_account"):
+        si.preferred_bank_account = preferred_bank_account
+
+    set_trader_invoice_type(si, invoice_type=invoice_type, is_return=is_return)
+    taxes_and_charges = resolve_sales_taxes(company, invoice_type, taxes_and_charges)
 
     for item in items:
+        item_code = item.get("item_code")
+        warehouse = item.get("warehouse") or default_warehouse
+        qty = -abs(flt(item.get("qty", 1))) if cint(is_return) else flt(item.get("qty", 1))
+
+        if cint(update_stock) and not cint(is_return) and frappe.get_cached_value("Item", item_code, "is_stock_item"):
+            _ensure_stock_available(item_code, warehouse, qty, company)
+
+        serial_no = (item.get("serial_no") or "").strip()
+        if serial_no:
+            from trader_app.api.inventory import check_serial_for_item
+            result = check_serial_for_item(item_code, serial_no, warehouse=warehouse, company=company)
+            if not result.get("valid"):
+                frappe.throw(result.get("message") or _("Invalid serial number."))
+
         row = {
-            "item_code": item.get("item_code"),
-            "qty": -abs(flt(item.get("qty", 1))) if cint(is_return) else flt(item.get("qty", 1)),
+            "item_code": item_code,
+            "qty": qty,
             "rate": flt(item.get("rate", 0)),
-            "warehouse": item.get("warehouse") or f"Main Warehouse - {abbr}",
+            "warehouse": warehouse,
         }
         if item.get("description"):
             row["description"] = item["description"]
+        if serial_no:
+            row["serial_no"] = serial_no
         si.append("items", row)
 
     if taxes_and_charges:
@@ -343,7 +455,12 @@ def create_sales_invoice(customer, items, company=None, posting_date=None,
                 tax_row.included_in_print_rate = 1
 
     si.insert(ignore_permissions=False)
-    return {"name": si.name, "status": "Draft"}
+    return {
+        "name": si.name,
+        "status": "Draft",
+        "trader_invoice_type": getattr(si, "trader_invoice_type", None),
+        "print_format": print_format_for_doc(si),
+    }
 
 
 @frappe.whitelist()
@@ -355,7 +472,7 @@ def create_sales_order(customer, items, company=None, transaction_date=None,
     if isinstance(items, str):
         items = json.loads(items)
 
-    company = company or _default_company()
+    company = resolve_active_company(company)
     abbr = frappe.get_cached_value("Company", company, "abbr")
 
     so = frappe.new_doc("Sales Order")
@@ -430,13 +547,13 @@ def cancel_sales_order(name):
 @frappe.whitelist()
 def create_quotation(customer, items, company=None, transaction_date=None,
                      valid_till=None, taxes_and_charges=None,
-                     tax_inclusive=0):
+                     tax_inclusive=0, invoice_type=None):
     """Create a Quotation from the UI."""
     import json
     if isinstance(items, str):
         items = json.loads(items)
 
-    company = company or _default_company()
+    company = resolve_active_company(company)
     abbr = frappe.get_cached_value("Company", company, "abbr")
 
     q = frappe.new_doc("Quotation")
@@ -445,6 +562,10 @@ def create_quotation(customer, items, company=None, transaction_date=None,
     q.party_name = customer
     q.transaction_date = transaction_date or nowdate()
     q.valid_till = valid_till or q.transaction_date
+
+    type_key = invoice_type or "quotation"
+    set_trader_invoice_type(q, invoice_type=type_key)
+    taxes_and_charges = resolve_sales_taxes(company, type_key, taxes_and_charges)
 
     for item in items:
         row = {
@@ -465,7 +586,142 @@ def create_quotation(customer, items, company=None, transaction_date=None,
                 tax_row.included_in_print_rate = 1
 
     q.insert(ignore_permissions=False)
-    return {"name": q.name, "status": "Draft"}
+    return {
+        "name": q.name,
+        "status": "Draft",
+        "trader_invoice_type": getattr(q, "trader_invoice_type", None),
+        "print_format": print_format_for_doc(q),
+    }
+
+
+# ────────────────────────────────────────────────────────────────
+# 2b. DELIVERY NOTE / DELIVERY CHALLAN
+# ────────────────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_delivery_notes(company=None, customer=None, status=None,
+                       page=1, page_size=20, search=None):
+    """Paginated delivery challans (Delivery Notes)."""
+    company = resolve_active_company(company)
+    page = cint(page) or 1
+    page_size = min(cint(page_size) or 20, 100)
+    offset = (page - 1) * page_size
+
+    conditions = ["dn.company = %(company)s", "dn.docstatus IN (0, 1)"]
+    params = {"company": company}
+
+    if customer:
+        conditions.append("dn.customer = %(customer)s")
+        params["customer"] = customer
+    if status == "Draft":
+        conditions.append("dn.docstatus = 0")
+    elif status == "Submitted":
+        conditions.append("dn.docstatus = 1")
+    if search:
+        conditions.append("(dn.name LIKE %(search)s OR dn.customer LIKE %(search)s)")
+        params["search"] = f"%{search}%"
+
+    where = " AND ".join(conditions)
+    type_select = (
+        ", dn.trader_invoice_type"
+        if frappe.db.has_column("Delivery Note", "trader_invoice_type")
+        else ", 'Delivery Challan' AS trader_invoice_type"
+    )
+
+    total = frappe.db.sql(
+        f"SELECT COUNT(*) FROM `tabDelivery Note` dn WHERE {where}", params
+    )[0][0]
+
+    rows = frappe.db.sql(f"""
+        SELECT dn.name, dn.customer, dn.customer_name, dn.posting_date,
+               dn.grand_total, dn.currency, dn.docstatus, dn.status
+               {type_select}
+        FROM `tabDelivery Note` dn
+        WHERE {where}
+        ORDER BY dn.posting_date DESC, dn.creation DESC
+        LIMIT %(page_size)s OFFSET %(offset)s
+    """, {**params, "page_size": page_size, "offset": offset}, as_dict=True)
+
+    return {"data": rows, "total": cint(total), "page": page, "page_size": page_size}
+
+
+@frappe.whitelist()
+def get_delivery_note_detail(name):
+    doc = frappe.get_doc("Delivery Note", name)
+    doc.check_permission("read")
+    assert_document_company_access(doc.company)
+    data = doc.as_dict()
+    data["print_format"] = print_format_for_doc(doc)
+    return data
+
+
+@frappe.whitelist()
+def create_delivery_note(customer, items, company=None, posting_date=None,
+                         sales_order=None, against_sales_invoice=None):
+    """Create a delivery challan (Delivery Note)."""
+    import json
+    if isinstance(items, str):
+        items = json.loads(items)
+
+    company = resolve_active_company(company)
+    abbr = frappe.get_cached_value("Company", company, "abbr")
+
+    dn = frappe.new_doc("Delivery Note")
+    dn.company = company
+    dn.customer = customer
+    dn.posting_date = posting_date or nowdate()
+    dn.set_warehouse = f"Main Warehouse - {abbr}"
+    set_trader_invoice_type(dn, invoice_type="delivery_challan")
+
+    for item in items:
+        row = {
+            "item_code": item.get("item_code"),
+            "qty": flt(item.get("qty", 1)),
+            "warehouse": item.get("warehouse") or f"Main Warehouse - {abbr}",
+        }
+        if item.get("description"):
+            row["description"] = item["description"]
+        if item.get("rate") is not None:
+            row["rate"] = flt(item.get("rate", 0))
+        if sales_order:
+            row["against_sales_order"] = sales_order
+        dn.append("items", row)
+
+    dn.insert(ignore_permissions=False)
+
+    if against_sales_invoice:
+        try:
+            dn.reload()
+            for row in dn.items:
+                row.against_sales_invoice = against_sales_invoice
+            dn.save(ignore_permissions=False)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "delivery note link to invoice failed")
+
+    return {
+        "name": dn.name,
+        "status": "Draft",
+        "trader_invoice_type": getattr(dn, "trader_invoice_type", "Delivery Challan"),
+        "print_format": print_format_for_doc(dn),
+    }
+
+
+@frappe.whitelist()
+def submit_delivery_note(name):
+    doc = frappe.get_doc("Delivery Note", name)
+    doc.check_permission("submit")
+    doc.submit()
+    frappe.db.commit()
+    return {"name": doc.name, "status": "Submitted"}
+
+
+@frappe.whitelist()
+def cancel_delivery_note(name):
+    doc = frappe.get_doc("Delivery Note", name)
+    doc.check_permission("cancel")
+    doc.cancel()
+    frappe.db.commit()
+    return {"name": doc.name, "status": "Cancelled"}
 
 
 @frappe.whitelist()
@@ -486,7 +742,7 @@ def submit_quotation(name):
 def get_sales_summary(company=None):
     """Aggregate sales stats for the Sales page header."""
     try:
-        company = company or _default_company()
+        company = resolve_active_company(company)
         today = nowdate()
         first_of_month = getdate(today).replace(day=1).isoformat()
 
@@ -555,6 +811,26 @@ def on_sales_invoice_cancel(doc, method):
 #    HELPERS
 # ────────────────────────────────────────────────────────────────
 
+def _ensure_stock_available(item_code, warehouse, qty, company):
+    """Block invoice creation when update_stock would oversell a warehouse."""
+    if not frappe.db.exists("Warehouse", warehouse):
+        frappe.throw(_("Warehouse {0} does not exist.").format(warehouse))
+
+    wh_company = frappe.get_cached_value("Warehouse", warehouse, "company")
+    if wh_company and wh_company != company:
+        frappe.throw(_("Warehouse {0} does not belong to company {1}.").format(warehouse, company))
+
+    available = flt(frappe.db.get_value(
+        "Bin", {"item_code": item_code, "warehouse": warehouse}, "actual_qty"
+    ) or 0)
+    if available < flt(qty):
+        frappe.throw(
+            _("Insufficient stock for {0} in {1}. Available: {2}, required: {3}.").format(
+                item_code, warehouse, available, qty
+            )
+        )
+
+
 def _check_customer_credit_limit(doc):
     """Check if the invoice would exceed customer credit limit."""
     from erpnext.selling.doctype.customer.customer import get_credit_limit, get_customer_outstanding
@@ -579,10 +855,3 @@ def _check_customer_credit_limit(doc):
         pass
 
 
-def _default_company():
-    companies = frappe.get_all("Company", limit=1, pluck="name")
-    return (
-        frappe.defaults.get_user_default("Company")
-        or frappe.db.get_single_value("Global Defaults", "default_company")
-        or (companies[0] if companies else None)
-    )

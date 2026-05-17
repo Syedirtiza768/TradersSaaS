@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Building2, Users, Shield, Globe, RefreshCw, SlidersHorizontal, Save } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Building2, Users, Shield, Globe, RefreshCw, SlidersHorizontal, Save, ScrollText } from 'lucide-react';
+import CurrencySettingsPanel from '../components/CurrencySettingsPanel';
 import { settingsApi } from '../lib/api';
 import { applyTraderUiTheme, normaliseUiPrefs, type TraderUiPrefs } from '../lib/traderUiTheme';
 
@@ -172,6 +174,9 @@ export default function SettingsPage() {
         {companyInfo ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
             <InfoRow label="Company Name" value={String(companyInfo.name ?? '')} />
+            <p className="text-xs text-gray-500 dark:text-slate-400 px-1">
+              Switch the active company from the header menu when you operate multiple legal entities.
+            </p>
             <InfoRow label="Abbreviation" value={String(companyInfo.abbr ?? '')} />
             <InfoRow label="Country" value={String(companyInfo.country ?? '')} />
             <InfoRow label="Currency" value={String(companyInfo.default_currency ?? '')} />
@@ -326,6 +331,25 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      <CurrencySettingsPanel />
+
+      <div className="card p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
+              <ScrollText size={20} className="text-violet-700 dark:text-violet-300" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Audit log</h2>
+              <p className="text-sm text-gray-500 dark:text-slate-400">Who changed sales, purchase, and finance documents</p>
+            </div>
+          </div>
+          <Link to="/settings/audit" className="btn-secondary self-start">
+            View activity
+          </Link>
+        </div>
+      </div>
 
       {/* Custom Roles */}
       <div className="card p-6">

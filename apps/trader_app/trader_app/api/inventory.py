@@ -15,6 +15,8 @@ import frappe
 from frappe import _
 from frappe.utils import nowdate, getdate, flt, cint
 
+from trader_app.api.company import resolve_active_company
+
 
 # ────────────────────────────────────────────────────────────────
 # 1.  STOCK BALANCE
@@ -24,7 +26,7 @@ from frappe.utils import nowdate, getdate, flt, cint
 def get_stock_balance(company=None, warehouse=None, item_group=None,
                       page=1, page_size=20, search=None):
     """Paginated stock balance — item-level view."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page = cint(page) or 1
     page_size = min(cint(page_size) or 20, 100)
     offset = (page - 1) * page_size
@@ -78,7 +80,7 @@ def get_stock_ledger(company=None, item_code=None, warehouse=None,
                      from_date=None, to_date=None,
                      page=1, page_size=20):
     """Paginated Stock Ledger Entries."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     page = cint(page) or 1
     page_size = min(cint(page_size) or 20, 100)
     offset = (page - 1) * page_size
@@ -138,7 +140,13 @@ def get_items(item_group=None, page=1, page_size=20, search=None):
         conditions.append("i.item_group = %(item_group)s")
         params["item_group"] = item_group
     if search:
-        conditions.append("(i.name LIKE %(search)s OR i.item_name LIKE %(search)s)")
+        conditions.append("""
+            (i.name LIKE %(search)s OR i.item_name LIKE %(search)s
+             OR EXISTS (
+                 SELECT 1 FROM `tabItem Barcode` ib
+                 WHERE ib.parent = i.name AND ib.barcode LIKE %(search)s
+             ))
+        """)
         params["search"] = f"%{search}%"
 
     where = " AND ".join(conditions)
@@ -149,7 +157,9 @@ def get_items(item_group=None, page=1, page_size=20, search=None):
 
     rows = frappe.db.sql(f"""
         SELECT i.name AS item_code, i.item_name, i.item_group, i.stock_uom,
-               i.is_stock_item, i.has_variants,
+               i.is_stock_item, i.has_variants, i.has_serial_no,
+               (SELECT ib.barcode FROM `tabItem Barcode` ib
+                WHERE ib.parent = i.name ORDER BY ib.idx LIMIT 1) AS barcode,
                COALESCE(ip_sell.price_list_rate, 0) AS selling_price,
                COALESCE(ip_buy.price_list_rate, 0) AS buying_price
         FROM `tabItem` i
@@ -165,14 +175,248 @@ def get_items(item_group=None, page=1, page_size=20, search=None):
     return {"data": rows, "total": cint(total), "page": page, "page_size": page_size}
 
 
+def _item_lookup_row(item_code, company=None):
+    """Compact item payload for barcode/POS scanners."""
+    row = frappe.db.sql("""
+        SELECT i.name AS item_code, i.item_name, i.item_group, i.stock_uom,
+               i.is_stock_item, i.has_serial_no,
+               (SELECT ib.barcode FROM `tabItem Barcode` ib
+                WHERE ib.parent = i.name ORDER BY ib.idx LIMIT 1) AS barcode,
+               COALESCE(ip_sell.price_list_rate, 0) AS selling_price,
+               COALESCE(ip_buy.price_list_rate, 0) AS buying_price
+        FROM `tabItem` i
+        LEFT JOIN `tabItem Price` ip_sell
+            ON ip_sell.item_code = i.name AND ip_sell.price_list = 'Standard Selling'
+        LEFT JOIN `tabItem Price` ip_buy
+            ON ip_buy.item_code = i.name AND ip_buy.price_list = 'Standard Buying'
+        WHERE i.name = %s AND IFNULL(i.disabled, 0) = 0
+    """, (item_code,), as_dict=True)
+    if not row:
+        return None
+    data = row[0]
+    if company:
+        abbr = frappe.get_cached_value("Company", company, "abbr")
+        wh = f"Main Warehouse - {abbr}"
+        data["default_warehouse"] = wh
+        data["stock_qty"] = flt(frappe.db.get_value(
+            "Bin", {"item_code": item_code, "warehouse": wh}, "actual_qty"
+        ) or 0)
+    return data
+
+
+@frappe.whitelist()
+def lookup_item_by_barcode(barcode, company=None):
+    """Resolve a scanned barcode (or item code) to an item for POS / invoice lines."""
+    barcode = (barcode or "").strip()
+    if not barcode:
+        frappe.throw(_("Barcode is required."))
+
+    company = resolve_active_company(company)
+    item_code = frappe.db.get_value("Item Barcode", {"barcode": barcode}, "parent")
+    if not item_code and frappe.db.exists("Item", barcode):
+        item_code = barcode
+
+    if not item_code:
+        return {"found": False, "message": _("No item found for barcode {0}.").format(barcode)}
+
+    data = _item_lookup_row(item_code, company=company)
+    if not data:
+        return {"found": False, "message": _("Item {0} is disabled or missing.").format(item_code)}
+
+    return {"found": True, "barcode": barcode, "item": data}
+
+
 # ────────────────────────────────────────────────────────────────
 # 4.  WAREHOUSES
 # ────────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
+def get_warehouse_item_qty(item_code, warehouse, company=None):
+    """Available quantity for an item in a specific warehouse."""
+    company = resolve_active_company(company)
+    if not item_code or not warehouse:
+        return {"item_code": item_code, "warehouse": warehouse, "qty": 0}
+
+    if not frappe.db.exists("Warehouse", warehouse):
+        frappe.throw(_("Warehouse {0} does not exist.").format(warehouse))
+
+    wh_company = frappe.get_cached_value("Warehouse", warehouse, "company")
+    if wh_company and wh_company != company:
+        frappe.throw(_("Warehouse {0} does not belong to company {1}.").format(warehouse, company))
+
+    qty = flt(frappe.db.get_value(
+        "Bin", {"item_code": item_code, "warehouse": warehouse}, "actual_qty"
+    ) or 0)
+    return {"item_code": item_code, "warehouse": warehouse, "qty": qty}
+
+
+def check_serial_for_item(item_code, serial_no, warehouse=None, company=None):
+    """Validate a serial number for sale/issue (non-whitelisted helper for internal use)."""
+    serial_no = (serial_no or "").strip()
+    if not serial_no:
+        return {"valid": False, "message": _("Serial number is required.")}
+    if not item_code:
+        return {"valid": False, "message": _("Item is required for serial validation.")}
+
+    if not frappe.db.exists("Serial No", serial_no):
+        return {"valid": False, "message": _("Serial number {0} was not found.").format(serial_no)}
+
+    sn = frappe.db.get_value(
+        "Serial No",
+        serial_no,
+        ["item_code", "warehouse", "status", "company"],
+        as_dict=True,
+    )
+
+    if sn.item_code != item_code:
+        return {
+            "valid": False,
+            "message": _("Serial {0} belongs to item {1}, not {2}.").format(
+                serial_no, sn.item_code, item_code
+            ),
+        }
+
+    if company and sn.company and sn.company != company:
+        return {
+            "valid": False,
+            "message": _("Serial {0} belongs to company {1}.").format(serial_no, sn.company),
+        }
+
+    if warehouse and sn.warehouse and sn.warehouse != warehouse:
+        return {
+            "valid": False,
+            "message": _("Serial {0} is in warehouse {1}, not {2}.").format(
+                serial_no, sn.warehouse, warehouse
+            ),
+        }
+
+    if sn.status in ("Delivered",):
+        return {
+            "valid": False,
+            "message": _("Serial {0} is already delivered.").format(serial_no),
+        }
+
+    return {
+        "valid": True,
+        "serial_no": serial_no,
+        "item_code": sn.item_code,
+        "warehouse": sn.warehouse,
+        "status": sn.status,
+    }
+
+
+@frappe.whitelist()
+def validate_serial_for_item(item_code, serial_no, warehouse=None, company=None):
+    """Validate serial number belongs to item/model and is available (API for invoice UI)."""
+    company = resolve_active_company(company)
+    return check_serial_for_item(item_code, serial_no, warehouse=warehouse, company=company)
+
+
+def check_serial_for_purchase(item_code, serial_no, company=None):
+    """Validate serial on purchase receipt — must match item; reject if already on another item."""
+    serial_no = (serial_no or "").strip()
+    if not serial_no:
+        return {"valid": False, "message": _("Serial number is required.")}
+    if not item_code:
+        return {"valid": False, "message": _("Item is required for serial validation.")}
+
+    if frappe.db.exists("Serial No", serial_no):
+        sn = frappe.db.get_value(
+            "Serial No",
+            serial_no,
+            ["item_code", "status", "company"],
+            as_dict=True,
+        )
+        if sn.item_code != item_code:
+            return {
+                "valid": False,
+                "message": _("Serial {0} already exists for item {1}.").format(serial_no, sn.item_code),
+            }
+        if company and sn.company and sn.company != company:
+            return {
+                "valid": False,
+                "message": _("Serial {0} belongs to company {1}.").format(serial_no, sn.company),
+            }
+        if sn.status not in ("", "Active", "Inactive"):
+            return {
+                "valid": False,
+                "message": _("Serial {0} has status {1} and cannot be received again.").format(
+                    serial_no, sn.status
+                ),
+            }
+        return {"valid": True, "serial_no": serial_no, "existing": True}
+
+    return {"valid": True, "serial_no": serial_no, "existing": False}
+
+
+@frappe.whitelist()
+def validate_items_stock(items, company=None):
+    """Validate stock availability for multiple item/warehouse/qty rows (invoice UI)."""
+    import json
+
+    if isinstance(items, str):
+        items = json.loads(items)
+
+    company = resolve_active_company(company)
+    issues = []
+
+    for idx, item in enumerate(items or []):
+        item_code = (item.get("item_code") or "").strip()
+        warehouse = (item.get("warehouse") or "").strip()
+        qty = flt(item.get("qty", 0))
+        if not item_code or not warehouse or qty <= 0:
+            continue
+        if not frappe.get_cached_value("Item", item_code, "is_stock_item"):
+            continue
+
+        if not frappe.db.exists("Warehouse", warehouse):
+            issues.append({
+                "line": idx + 1,
+                "item_code": item_code,
+                "warehouse": warehouse,
+                "message": _("Warehouse {0} does not exist.").format(warehouse),
+            })
+            continue
+
+        wh_company = frappe.get_cached_value("Warehouse", warehouse, "company")
+        if wh_company and wh_company != company:
+            issues.append({
+                "line": idx + 1,
+                "item_code": item_code,
+                "warehouse": warehouse,
+                "message": _("Warehouse {0} does not belong to company {1}.").format(warehouse, company),
+            })
+            continue
+
+        available = flt(frappe.db.get_value(
+            "Bin", {"item_code": item_code, "warehouse": warehouse}, "actual_qty"
+        ) or 0)
+        if available < qty:
+            issues.append({
+                "line": idx + 1,
+                "item_code": item_code,
+                "warehouse": warehouse,
+                "required_qty": qty,
+                "available_qty": available,
+                "message": _("Insufficient stock for {0} in {1}. Available: {2}, required: {3}.").format(
+                    item_code, warehouse, available, qty
+                ),
+            })
+
+    return {"valid": not issues, "issues": issues}
+
+
+@frappe.whitelist()
+def validate_serial_for_purchase(item_code, serial_no, company=None):
+    """Validate serial for purchase invoice / goods receipt lines."""
+    company = resolve_active_company(company)
+    return check_serial_for_purchase(item_code, serial_no, company=company)
+
+
+@frappe.whitelist()
 def get_warehouses(company=None):
     """List warehouses for the company with stock summary."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
 
     rows = frappe.db.sql("""
         SELECT w.name AS warehouse, w.warehouse_name, w.warehouse_type,
@@ -196,7 +440,7 @@ def get_warehouses(company=None):
 @frappe.whitelist()
 def get_inventory_summary(company=None):
     """Stock summary by item group."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
 
     rows = frappe.db.sql("""
         SELECT i.item_group,
@@ -247,7 +491,7 @@ def get_inventory_summary(company=None):
 @frappe.whitelist()
 def get_low_stock_items(company=None, threshold=10, page=1, page_size=20):
     """Items with stock below threshold."""
-    company = company or _default_company()
+    company = resolve_active_company(company)
     threshold = cint(threshold) or 10
     page = cint(page) or 1
     page_size = min(cint(page_size) or 20, 100)
@@ -291,11 +535,11 @@ def get_item_groups():
 # ────────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_item_detail(item_code):
+def get_item_detail(item_code, company=None):
     """Full Item record with current stock totals."""
     doc = frappe.get_doc("Item", item_code)
     doc.check_permission("read")
-    company = _default_company()
+    company = resolve_active_company(company)
 
     stock_qty = flt(frappe.db.sql(
         "SELECT COALESCE(SUM(actual_qty), 0) FROM `tabBin` WHERE item_code = %s",
@@ -329,7 +573,8 @@ def get_item_detail(item_code):
 
 
 @frappe.whitelist()
-def create_item(item_code, item_name=None, item_group=None, stock_uom=None, is_stock_item=1):
+def create_item(item_code, item_name=None, item_group=None, stock_uom=None,
+                is_stock_item=1, has_serial_no=0, barcode=None):
     """Create a new Item record."""
     doc = frappe.new_doc("Item")
     doc.item_code = item_code
@@ -337,9 +582,20 @@ def create_item(item_code, item_name=None, item_group=None, stock_uom=None, is_s
     doc.item_group = item_group or frappe.db.get_single_value("Stock Settings", "item_group") or "All Item Groups"
     doc.stock_uom = stock_uom or "Nos"
     doc.is_stock_item = cint(is_stock_item)
+    if cint(has_serial_no):
+        doc.has_serial_no = 1
+    barcode = (barcode or "").strip()
+    if barcode:
+        doc.append("barcodes", {"barcode": barcode, "barcode_type": "EAN"})
     doc.insert(ignore_permissions=False)
     frappe.db.commit()
-    return {"item_code": doc.item_code, "item_name": doc.item_name, "status": "Created"}
+    return {
+        "item_code": doc.item_code,
+        "item_name": doc.item_name,
+        "barcode": barcode or None,
+        "has_serial_no": cint(has_serial_no),
+        "status": "Created",
+    }
 
 
 @frappe.whitelist()
@@ -349,7 +605,7 @@ def create_purchase_receipt(items, posting_date=None, company=None):
     if isinstance(items, str):
         items = json.loads(items)
 
-    company = company or _default_company()
+    company = resolve_active_company(company)
     abbr = frappe.get_cached_value("Company", company, "abbr")
 
     se = frappe.new_doc("Stock Entry")
@@ -377,7 +633,7 @@ def create_sales_dispatch(items, posting_date=None, company=None):
     if isinstance(items, str):
         items = json.loads(items)
 
-    company = company or _default_company()
+    company = resolve_active_company(company)
     abbr = frappe.get_cached_value("Company", company, "abbr")
 
     se = frappe.new_doc("Stock Entry")
@@ -408,7 +664,7 @@ def create_stock_entry(purpose, items, company=None, posting_date=None):
     if isinstance(items, str):
         items = json.loads(items)
 
-    company = company or _default_company()
+    company = resolve_active_company(company)
     abbr = frappe.get_cached_value("Company", company, "abbr")
 
     se = frappe.new_doc("Stock Entry")
@@ -471,13 +727,3 @@ def update_reorder_levels():
             )
 
 
-# ────────────────────────────────────────────────────────────────
-#    HELPERS
-# ────────────────────────────────────────────────────────────────
-
-def _default_company():
-    return (
-        frappe.defaults.get_user_default("Company")
-        or frappe.db.get_single_value("Global Defaults", "default_company")
-        or frappe.get_all("Company", limit=1, pluck="name")[0]
-    )

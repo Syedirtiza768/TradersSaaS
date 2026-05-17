@@ -1,0 +1,131 @@
+{
+ "actions": [],
+ "creation": "2026-05-11 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "company",
+  "status",
+  "source_type",
+  "file_path",
+  "progress",
+  "current_step",
+  "job_id",
+  "error_message",
+  "mapping_json",
+  "summary_json",
+  "completed_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Queued\nParsing\nMapping\nImporting\nDraft\nSubmitted\nFailed\nCancelled",
+   "reqd": 1,
+   "default": "Queued"
+  },
+  {
+   "fieldname": "source_type",
+   "fieldtype": "Select",
+   "label": "Source Type",
+   "options": "Tally ERP 9\nTallyPrime 3.x\nTallyPrime 4.x\nCSV",
+   "reqd": 1
+  },
+  {
+   "fieldname": "file_path",
+   "fieldtype": "Data",
+   "label": "File Path",
+   "description": "Server path to uploaded export file"
+  },
+  {
+   "fieldname": "progress",
+   "fieldtype": "Int",
+   "label": "Progress",
+   "default": "0",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "current_step",
+   "fieldtype": "Data",
+   "label": "Current Step"
+  },
+  {
+   "fieldname": "job_id",
+   "fieldtype": "Data",
+   "label": "Job ID",
+   "description": "Background worker job id (e.g. RQ) for reconnect"
+  },
+  {
+   "fieldname": "error_message",
+   "fieldtype": "Text",
+   "label": "Error Message"
+  },
+  {
+   "fieldname": "mapping_json",
+   "fieldtype": "JSON",
+   "label": "Mapping JSON"
+  },
+  {
+   "fieldname": "summary_json",
+   "fieldtype": "JSON",
+   "label": "Summary JSON"
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At"
+  }
+ ],
+ "links": [],
+ "modified": "2026-05-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Trader",
+ "name": "Migration Job",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Trader Admin",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "name",
+ "autoname": "format:MJ-{####}",
+ "naming_rule": "By \"Naming Series\" field",
+ "is_submittable": 0,
+ "istable": 0,
+ "quick_entry": 0,
+ "track_changes": 1
+}

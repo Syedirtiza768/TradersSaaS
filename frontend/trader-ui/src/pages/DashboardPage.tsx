@@ -29,6 +29,7 @@ import {
 import KPICard from '../components/KPICard';
 import { dashboardApi } from '../lib/api';
 import { formatCurrency, formatDate, getStatusColor } from '../lib/utils';
+import { useCompanyStore } from '../stores/companyStore';
 
 interface DashboardKPIs {
   todays_sales: number;
@@ -49,10 +50,14 @@ export default function DashboardPage() {
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const companyRevision = useCompanyStore((s) => s.revision);
+  const companyInitialized = useCompanyStore((s) => s.initialized);
+  const activeCompany = useCompanyStore((s) => s.company);
 
   useEffect(() => {
+    if (!companyInitialized) return;
     void loadDashboard();
-  }, []);
+  }, [companyRevision, companyInitialized]);
 
   const loadDashboard = async () => {
     setLoading(true);
@@ -89,7 +94,10 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="page-title">Dashboard</h1>
-          <p className="text-gray-500 dark:text-slate-400 mt-1 text-sm">Welcome back — here's your business at a glance.</p>
+          <p className="text-gray-500 dark:text-slate-400 mt-1 text-sm">
+            Welcome back — here's your business at a glance
+            {activeCompany ? ` for ${activeCompany}` : ''}.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start">
           <button type="button" onClick={() => void loadDashboard()} className="btn-secondary flex items-center gap-2 text-sm" disabled={loading}>
