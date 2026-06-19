@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "description": "Checkpoints for docs/IMPLEMENTATION_PROGRESS.md. Each verified item is done when all verify rules pass. manual items are tracked but never auto-complete. Edit this file as the backlog evolves; run npm run progress:sync to refresh the tracker.",
+  "items": [
+    {
+      "id": "settings-ui-persistence",
+      "title": "Settings: per-user UI prefs + Save (trader_app.api.settings)",
+      "priority": "P0",
+      "refs": ["docs/architecture/repair-blueprint.md"],
+      "verify": [
+        { "type": "file_exists", "path": "frontend/trader-ui/src/lib/traderUiTheme.ts" },
+        { "type": "file_contains", "path": "frontend/trader-ui/src/pages/SettingsPage.tsx", "substring": "settingsApi.save" }
+      ]
+    },
+    {
+      "id": "dashboard-kpi-cache",
+      "title": "Dashboard: Redis-backed KPI cache + scheduler refresh",
+      "priority": "P0",
+      "refs": ["TODOS.md"],
+      "verify": [
+        { "type": "file_contains", "path": "apps/trader_app/trader_app/api/dashboard.py", "substring": "_compute_dashboard_kpis" },
+        { "type": "file_contains", "path": "apps/trader_app/trader_app/api/dashboard.py", "substring": "DASHBOARD_KPI_CACHE_TTL" }
+      ]
+    },
+    {
+      "id": "dashboard-ux-resilience",
+      "title": "Dashboard: load error + retry + quick action links",
+      "priority": "P1",
+      "verify": [
+        { "type": "file_contains", "path": "frontend/trader-ui/src/pages/DashboardPage.tsx", "substring": "loadError" },
+        { "type": "file_contains", "path": "frontend/trader-ui/src/pages/DashboardPage.tsx", "substring": "to=\"/sales/new\"" }
+      ]
+    },
+    {
+      "id": "qw-inventory-api-dedupe",
+      "title": "Quick win: single getInventorySummary call site (dashboard widget only; no duplicate on inventoryApi)",
+      "priority": "P0",
+      "refs": ["TODOS.md"],
+      "verify": [
+        {
+          "type": "substring_count",
+          "path": "frontend/trader-ui/src/lib/api.ts",
+          "substring": "getInventorySummary",
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "id": "qw-reports-page-consolidation",
+      "title": "Quick win: single ReportsPage (remove ReportsPageNew split)",
+      "priority": "P0",
+      "verify": [
+        { "type": "file_exists", "path": "frontend/trader-ui/src/pages/ReportsPage.tsx" },
+        { "type": "file_missing", "path": "frontend/trader-ui/src/pages/ReportsPageNew.tsx" },
+        { "type": "file_contains", "path": "frontend/trader-ui/src/App.tsx", "substring": "import('./pages/ReportsPage')" }
+      ]
+    },
+    {
+      "id": "qw-sales-credit-except",
+      "title": "Quick win: narrow _check_customer_credit_limit exception",
+      "priority": "P0",
+      "verify": [
+        { "type": "file_contains", "path": "apps/trader_app/trader_app/api/sales.py", "substring": "except (AttributeError, ImportError):" }
+      ]
+    },
+    {
+      "id": "qw-defusedxml-dep",
+      "title": "Quick win: defusedxml in trader_app requirements",
+      "priority": "P0",
+      "verify": [{ "type": "file_contains", "path": "apps/trader_app/requirements.txt", "substring": "defusedxml" }]
+    },
+    {
+      "id": "migration-job-doctype",
+      "title": "Migration: Migration Job DocType (durable wizard job state)",
+      "priority": "P1",
+      "refs": ["TODOS.md"],
+      "verify": [
+        { "type": "file_exists", "path": "apps/trader_app/trader_app/trader/doctype/migration_job/migration_job.json" },
+        { "type": "file_exists", "path": "apps/trader_app/trader_app/trader/doctype/migration_job/migration_job.py" },
+        {
+          "type": "file_contains",
+          "path": "apps/trader_app/trader_app/trader/doctype/migration_job/migration_job.json",
+          "substring": "\"name\": \"Migration Job\""
+        }
+      ]
+    },
+    {
+      "id": "migration-xml-safe-parse",
+      "title": "Migration: parse Tally XML with defusedxml in application code",
+      "priority": "P1",
+      "manual": true,
+      "note": "depends on migration wizard; requirements line is not enough — add parser import + tests when the feature lands."
+    },
+    {
+      "id": "frontend-primary-actions-audit",
+      "title": "Frontend: wire or hide placeholder actions on high-traffic lists",
+      "priority": "P1",
+      "refs": ["docs/audits/frontend-actions-audit.md"],
+      "manual": true,
+      "note": "extend manifest with file_contains checks per screen when each action is implemented."
+    },
+    {
+      "id": "orphan-inventory-endpoints",
+      "title": "Wire warehouse stock / stock movement UI or document internal-only APIs",
+      "priority": "P1",
+      "refs": ["docs/audits/frontend-backend-mapping.md"],
+      "verify": [
+        { "type": "file_exists", "path": "frontend/trader-ui/src/pages/WarehouseStockPage.tsx" },
+        { "type": "file_exists", "path": "frontend/trader-ui/src/pages/StockMovementPage.tsx" }
+      ]
+    },
+    {
+      "id": "governance-architecture-audits",
+      "title": "Governance: architecture audit policy + runbook in repo",
+      "priority": "P2",
+      "refs": ["docs/governance/architecture-audit-policy.md"],
+      "verify": [
+        { "type": "file_exists", "path": "docs/governance/architecture-audit-policy.md" },
+        { "type": "file_exists", "path": "docs/governance/audit-runbook.md" }
+      ]
+    },
+    {
+      "id": "contributing-doc",
+      "title": "Add CONTRIBUTING.md (setup, progress:sync, audits)",
+      "priority": "P2",
+      "verify": [{ "type": "file_exists", "path": "CONTRIBUTING.md" }]
+    },
+    {
+      "id": "design-md",
+      "title": "Add DESIGN.md (tokens, components, a11y)",
+      "priority": "P2",
+      "manual": true,
+      "note": "flip to verify + file_exists when DESIGN.md is added; until then tracked as backlog."
+    }
+  ]
+}

@@ -27,11 +27,10 @@ function Confirm-Action([string]$Message) {
     }
 }
 
-function Invoke-Compose([string[]]$Args) {
-    $commandLine = @('compose', '-f', ('"' + $ComposeFile + '"')) + $Args
-    Invoke-Expression (('docker ' + ($commandLine -join ' ')))
+function Invoke-Compose([string[]]$ComposeArgs) {
+    & docker compose -f $ComposeFile @ComposeArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "docker compose $($Args -join ' ') failed with exit code $LASTEXITCODE"
+        throw "docker compose $($ComposeArgs -join ' ') failed with exit code $LASTEXITCODE"
     }
 }
 
@@ -99,9 +98,9 @@ if ($services.Count -gt 0) {
 if ($Migrate) {
     Write-Step "Running backend migrate + clear-cache"
     $siteName = if ($env:SITE_NAME) { $env:SITE_NAME } else { 'trader.localhost' }
-    Invoke-Expression "docker compose -f \"$ComposeFile\" exec -T backend bench --site $siteName migrate"
+    & docker compose -f $ComposeFile exec -T backend bench --site $siteName migrate
     if ($LASTEXITCODE -ne 0) { throw "bench migrate failed" }
-    Invoke-Expression "docker compose -f \"$ComposeFile\" exec -T backend bench --site $siteName clear-cache"
+    & docker compose -f $ComposeFile exec -T backend bench --site $siteName clear-cache
 }
 
 Write-Step "Verifying health"
@@ -112,5 +111,5 @@ if (-not (Wait-ForHttp 'http://localhost:8080/api/method/ping' 120)) {
 }
 
 Write-Host "`nRedeploy complete." -ForegroundColor Green
-Write-Host "Frontend: http://localhost:3000"
-Write-Host "Proxy:    http://localhost:8080"
+Write-Host "App UI:   http://localhost:8080"
+Write-Host "API:      http://localhost:8080/api/method/ping"

@@ -1,0 +1,162 @@
+{
+  "generatedAt": "2026-05-11T10:23:12.366Z",
+  "gitCommit": "a9d1463",
+  "manifestVersion": 1,
+  "summary": {
+    "verifiedTotal": 11,
+    "verifiedDone": 11,
+    "verifiedPending": 0,
+    "manualTotal": 3
+  },
+  "todosTagCounts": {
+    "P0": 4,
+    "DONE": 1,
+    "P1": 8,
+    "P2": 7,
+    "P3": 5,
+    "P4": 2,
+    "P5": 5
+  },
+  "items": [
+    {
+      "id": "settings-ui-persistence",
+      "title": "Settings: per-user UI prefs + Save (trader_app.api.settings)",
+      "priority": "P0",
+      "status": "done",
+      "manual": false,
+      "failures": [],
+      "refs": [
+        "docs/architecture/repair-blueprint.md"
+      ]
+    },
+    {
+      "id": "dashboard-kpi-cache",
+      "title": "Dashboard: Redis-backed KPI cache + scheduler refresh",
+      "priority": "P0",
+      "status": "done",
+      "manual": false,
+      "failures": [],
+      "refs": [
+        "TODOS.md"
+      ]
+    },
+    {
+      "id": "dashboard-ux-resilience",
+      "title": "Dashboard: load error + retry + quick action links",
+      "priority": "P1",
+      "status": "done",
+      "manual": false,
+      "failures": [],
+      "refs": []
+    },
+    {
+      "id": "qw-inventory-api-dedupe",
+      "title": "Quick win: single getInventorySummary call site (dashboard widget only; no duplicate on inventoryApi)",
+      "priority": "P0",
+      "status": "done",
+      "manual": false,
+      "failures": [],
+      "refs": [
+        "TODOS.md"
+      ]
+    },
+    {
+      "id": "qw-reports-page-consolidation",
+      "title": "Quick win: single ReportsPage (remove ReportsPageNew split)",
+      "priority": "P0",
+      "status": "done",
+      "manual": false,
+      "failures": [],
+      "refs": []
+    },
+    {
+      "id": "qw-sales-credit-except",
+      "title": "Quick win: narrow _check_customer_credit_limit exception",
+      "priority": "P0",
+      "status": "done",
+      "manual": false,
+      "failures": [],
+      "refs": []
+    },
+    {
+      "id": "qw-defusedxml-dep",
+      "title": "Quick win: defusedxml in trader_app requirements",
+      "priority": "P0",
+      "status": "done",
+      "manual": false,
+      "failures": [],
+      "refs": []
+    },
+    {
+      "id": "migration-job-doctype",
+      "title": "Migration: Migration Job DocType (durable wizard job state)",
+      "priority": "P1",
+      "status": "done",
+      "manual": false,
+      "failures": [],
+      "refs": [
+        "TODOS.md"
+      ]
+    },
+    {
+      "id": "migration-xml-safe-parse",
+      "title": "Migration: parse Tally XML with defusedxml in application code",
+      "priority": "P1",
+      "status": "manual",
+      "manual": true,
+      "note": "depends on migration wizard; requirements line is not enough — add parser import + tests when the feature lands.",
+      "refs": []
+    },
+    {
+      "id": "frontend-primary-actions-audit",
+      "title": "Frontend: wire or hide placeholder actions on high-traffic lists",
+      "priority": "P1",
+      "status": "manual",
+      "manual": true,
+      "note": "extend manifest with file_contains checks per screen when each action is implemented.",
+      "refs": [
+        "docs/audits/frontend-actions-audit.md"
+      ]
+    },
+    {
+      "id": "orphan-inventory-endpoints",
+      "title": "Wire warehouse stock / stock movement UI or document internal-only APIs",
+      "priority": "P1",
+      "status": "done",
+      "manual": false,
+      "failures": [],
+      "refs": [
+        "docs/audits/frontend-backend-mapping.md"
+      ]
+    },
+    {
+      "id": "governance-architecture-audits",
+      "title": "Governance: architecture audit policy + runbook in repo",
+      "priority": "P2",
+      "status": "done",
+      "manual": false,
+      "failures": [],
+      "refs": [
+        "docs/governance/architecture-audit-policy.md"
+      ]
+    },
+    {
+      "id": "contributing-doc",
+      "title": "Add CONTRIBUTING.md (setup, progress:sync, audits)",
+      "priority": "P2",
+      "status": "done",
+      "manual": false,
+      "failures": [],
+      "refs": []
+    },
+    {
+      "id": "design-md",
+      "title": "Add DESIGN.md (tokens, components, a11y)",
+      "priority": "P2",
+      "status": "manual",
+      "manual": true,
+      "note": "flip to verify + file_exists when DESIGN.md is added; until then tracked as backlog.",
+      "refs": []
+    }
+  ]
+}
